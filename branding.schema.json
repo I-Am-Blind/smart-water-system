@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "branding.schema.json",
+  "title": "Branding",
+  "description": "Single source of truth for product naming and colours. Read by the web server (served live to browsers and the mobile app) and compiled into firmware/rig_firmware/branding.h by scripts/gen-branding.mjs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "shortName", "tagline", "deviceName", "branches", "colors", "showQr"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 40, "description": "Full product name shown in titles and headers." },
+    "shortName": { "type": "string", "minLength": 1, "maxLength": 16, "description": "Short name for tight spaces (app icon label, tab titles)." },
+    "tagline": { "type": "string", "maxLength": 120, "description": "One-line description shown on the landing screen." },
+    "deviceName": { "type": "string", "pattern": "^[a-z0-9-]{1,24}$", "description": "mDNS hostname of the ESP32 (http://<deviceName>.local) and the default device id prefix. Lowercase letters, digits, dashes." },
+    "team": { "type": "string", "maxLength": 80, "description": "Team or author names shown on the landing screen (may be empty)." },
+    "school": { "type": "string", "maxLength": 80, "description": "School or organisation shown on the landing screen (may be empty)." },
+    "branches": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": { "type": "string", "minLength": 1, "maxLength": 24 },
+      "description": "Display names for the three monitored branches, in order (branch 1, 2, 3)."
+    },
+    "colors": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bg", "accent", "ok", "warn", "danger"],
+      "properties": {
+        "bg":     { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Page background." },
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Primary accent (flow, highlights)." },
+        "ok":     { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Healthy state." },
+        "warn":   { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Warning state." },
+        "danger": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Leak / error state." }
+      }
+    },
+    "showQr": { "type": "boolean", "description": "Show a QR code of the dashboard URL so visitors can open it on their phones." }
+  }
+}

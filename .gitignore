@@ -1,0 +1,29 @@
+# node
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+# next.js
+web/.next/
+web/out/
+web/next-env.d.ts
+web/data/
+web/tsconfig.tsbuildinfo
+# expo / react native
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/android/
+mobile/ios/
+# firmware build output
+firmware/**/build/
+*.bin
+*.elf
+*.map
+# os / editor
+.DS_Store
+.vscode/
+.idea/
+*.log
+.env
+.env.*

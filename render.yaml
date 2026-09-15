@@ -1,0 +1,16 @@
+# Render blueprint (optional cloud deployment). Free web service: the rig's 1 Hz telemetry keeps
+# it awake; it sleeps after 15 min without traffic and the SQLite file is wiped on redeploy/restart.
+# The device must then use wss://<service>.onrender.com/ws.
+services:
+  - type: web
+    name: cascade-rig
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      # Do NOT set NODE_ENV here: it would skip devDependencies during the build.
