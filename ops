@@ -1,1 +1,1 @@
-{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":5,"timestamp":1789641235,"nonce":"U0dmNkIJJfRxJSxjutHOUarZuiI=","added":["hardware","firmware","P1"],"removed":null}]}
+{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":2,"timestamp":1789641314,"nonce":"7Nvt1R3Jzn/hYBfT2b4gq/wFj/M=","title":"Hardware bring-up: capture and interpret the diagnostic log","was":"Bring-up of the physical rig, before any production firmware is flashed."}]}
