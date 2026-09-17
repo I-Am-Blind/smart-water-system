@@ -1,1 +1,1 @@
-{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":5,"timestamp":1789641235,"nonce":"t3W2RuOK5ZElTMtRPqmFrRylil8=","added":["hardware","firmware","web","P1"],"removed":null}]}
+{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":3,"timestamp":1789641246,"nonce":"RzS5QqcFLhzPSbONrGpggds8KPg=","message":"Blocked by 1963260 (flash + calibrate), which is blocked by 2f0a5fe (bring-up).","files":null}]}
