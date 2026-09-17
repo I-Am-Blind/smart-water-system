@@ -2,7 +2,7 @@
 import { HZ_PER_LPM, type HistoryResponse, type Stamped, type Telemetry } from "@proto/types";
 
 export const RING_CAPACITY = 1800; // 30 min at 1 Hz
-export const SERIES = 7; // master + 3 x (in, out)
+export const SERIES = 2; // the monitored branch's in and out meters - the only ones that exist
 
 export class Ring {
   private t = new Float64Array(RING_CAPACITY);
@@ -16,7 +16,7 @@ export class Ring {
   /** Seeds from /api/history (older than anything already in the ring). */
   seed(h: HistoryResponse): void {
     this.clear();
-    const cols = [h.m, h.b1i, h.b1o, h.b2i, h.b2o, h.b3i, h.b3o];
+    const cols = [h.b1i, h.b1o];
     for (let i = 0; i < h.t.length; i++) {
       this.pushRaw(h.t[i], cols.map((c) => c[i] ?? 0));
     }
@@ -36,7 +36,7 @@ export class Ring {
     this.lastAt = at;
   }
 
-  /** Returns uPlot-shaped data [x(seconds), s0..s6] for the last `windowMs`. */
+  /** Returns uPlot-shaped data [x(seconds), in, out] for the last `windowMs`. */
   toData(windowMs: number, now: number = Date.now()): [number[], ...number[][]] {
     const from = now - windowMs;
     const x: number[] = [];

@@ -15,9 +15,9 @@
     "team": { "type": "string", "maxLength": 80, "description": "Team or author names shown on the landing screen (may be empty)." },
     "school": { "type": "string", "maxLength": 80, "description": "School or organisation shown on the landing screen (may be empty)." },
     "branches": {
-      "type": "array", "minItems": 3, "maxItems": 3,
+      "type": "array", "minItems": 2, "maxItems": 2,
       "items": { "type": "string", "minLength": 1, "maxLength": 24 },
-      "description": "Display names for the three monitored branches, in order (branch 1, 2, 3)."
+      "description": "Display names for the two lanes, in order. Branch 1 is the monitored lane (IN/OUT flow sensing, leak detection); branch 2 is the valve-only backup lane."
     },
     "colors": {
       "type": "object", "additionalProperties": false,

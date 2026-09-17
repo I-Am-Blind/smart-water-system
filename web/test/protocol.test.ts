@@ -52,8 +52,16 @@ test("brand samples and branding.json validate", () => {
 
 test("invalid telemetry is rejected", () => {
   const tel = load("tel.json") as { f: number[] };
-  assert.equal(DeviceToServerSchema.safeParse({ ...tel, f: tel.f.slice(0, 6) }).success, false);
-  assert.equal(DeviceToServerSchema.safeParse({ ...tel, leak: [0, 4, 0] }).success, false);
+  assert.equal(DeviceToServerSchema.safeParse({ ...tel, f: tel.f.slice(0, 1) }).success, false);
+  assert.equal(DeviceToServerSchema.safeParse({ ...tel, leak: [4, 0] }).success, false);
+});
+
+test("an unsensed branch is reported as such", () => {
+  const hello = load("hello.json") as { mon: number[] };
+  assert.deepEqual(hello.mon, [1, 0]);
+  const tel = load("tel.json") as { loss: number[]; leak: number[] };
+  assert.equal(tel.loss[1], 0);
+  assert.equal(tel.leak[1], 0);
 });
 
 test("browser store applies server messages", () => {

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { BRANCHES, PUMP_UI_DUR_S, type Branch, type Telemetry } from "@proto/types";
+import { BRANCHES, PUMP_UI_DUR_S, branchFlow, type Branch, type OnOff, type Telemetry } from "@proto/types";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -37,18 +37,30 @@ function ValveSwitch({ b, open, latched }: { b: Branch; open: boolean; latched: 
   );
 }
 
-function BranchRow({ b, tel }: { b: Branch; tel: Telemetry | null }) {
+/** Dash for a branch with no meters: its zeros on the wire are absence of data, not a reading. */
+function NoMeter() {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="cursor-default text-muted-foreground" />}>&ndash;</TooltipTrigger>
+      <TooltipContent>No flow meters on this branch</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function BranchRow({ b, tel, mon }: { b: Branch; tel: Telemetry | null; mon: readonly OnOff[] | undefined }) {
   const name = useRig((s) => s.brand.branches[b - 1]);
   const level = tel?.leak[b - 1] ?? 0;
   const open = tel?.v[b - 1] === 1;
   const latched = level >= 2;
+  const flow = tel ? branchFlow(tel, b, mon) : null;
+  const sensed = !tel || branchFlow(tel, b, mon) !== null;
   const loss = tel?.loss[b - 1] ?? 0;
-  const lossCell = !tel ? "--" : latched || !open ? <span className="text-muted-foreground">closed</span> : `${loss.toFixed(1)} %`;
+  const lossCell = !sensed ? <NoMeter /> : !tel ? "--" : latched || !open ? <span className="text-muted-foreground">closed</span> : `${loss.toFixed(1)} %`;
   return (
     <TableRow>
       <TableCell className="font-medium">{name}</TableCell>
-      <TableCell className="text-right tabular-nums">{fmt2(tel?.f[2 * b - 1])}</TableCell>
-      <TableCell className="text-right tabular-nums">{fmt2(tel?.f[2 * b])}</TableCell>
+      <TableCell className="text-right tabular-nums">{sensed ? fmt2(flow?.in) : <NoMeter />}</TableCell>
+      <TableCell className="text-right tabular-nums">{sensed ? fmt2(flow?.out) : <NoMeter />}</TableCell>
       <TableCell className="text-right tabular-nums">{lossCell}</TableCell>
       <TableCell>
         {level === 1 && <Badge variant="outline">Warning</Badge>}
@@ -58,6 +70,7 @@ function BranchRow({ b, tel }: { b: Branch; tel: Telemetry | null }) {
             <TooltipContent>Valve closed by leak protection. Press Clear leak to reset.</TooltipContent>
           </Tooltip>
         )}
+        {!sensed && <span className="text-xs text-muted-foreground">Backup</span>}
       </TableCell>
       <TableCell className="text-right">
         <ValveSwitch b={b} open={open} latched={latched} />
@@ -99,7 +112,7 @@ function PumpButton() {
         <AlertDialogHeader>
           <AlertDialogTitle>Run the pump for {PUMP_MIN} minutes?</AlertDialogTitle>
           <AlertDialogDescription>
-            It stops by itself when the time is up, when the last valve closes, or when the rig detects a leak before the branches.
+            It stops by itself when the time is up or when the last valve closes.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -115,7 +128,7 @@ function PumpButton() {
 
 function ClearLeakButton() {
   const online = useRig((s) => s.online);
-  const latched = useRig((s) => (s.tel ? s.tel.leak.some((l) => l >= 2) || s.tel.mleak === 1 : false));
+  const latched = useRig((s) => (s.tel ? s.tel.leak.some((l) => l >= 2) : false));
   const pending = useRig((s) => Object.values(s.pending).some((c) => c.act === "reset_leak"));
   if (!latched) return null;
   return (
@@ -132,15 +145,18 @@ function ClearLeakButton() {
   );
 }
 
-/** The three branches with their meters and valves, and the pump that feeds them. */
+/** Both branches with their valves, the meters of the monitored one, and the pump that feeds them. */
 export function BranchesCard({ className = "" }: { className?: string }) {
   const tel = useRig((s) => s.tel);
-  const mleak = tel?.mleak === 1;
+  const mon = useRig((s) => s.info?.mon);
+  const names = useRig((s) => s.brand.branches);
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle>Branches</CardTitle>
-        <CardDescription>Litres per minute at the two meters of each branch.</CardDescription>
+        <CardDescription>
+          Litres per minute in and out of {names[0]}. {names[1]} has a valve only, and opens by itself if {names[0]} leaks.
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         <Table>
@@ -155,14 +171,13 @@ export function BranchesCard({ className = "" }: { className?: string }) {
             </TableRow>
           </TableHeader>
           <TableBody className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4">
-            {BRANCHES.map((b) => <BranchRow key={b} b={b} tel={tel} />)}
+            {BRANCHES.map((b) => <BranchRow key={b} b={b} tel={tel} mon={mon} />)}
           </TableBody>
         </Table>
       </CardContent>
       <CardFooter className="flex flex-wrap items-center gap-2">
         <PumpButton />
         <ClearLeakButton />
-        {mleak && <Badge variant="destructive">Leak before the branches</Badge>}
       </CardFooter>
     </Card>
   );

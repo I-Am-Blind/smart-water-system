@@ -2,7 +2,10 @@
  * Rig geometry in scene units (roughly decimetres). Everything that needs a position
  * (meshes, particle paths, DOM labels) reads from here so the three stay aligned.
  *
- *   tank -> pump -> master sensor -> manifold -> [valve -> IN sensor -> leak point -> OUT sensor] x3 -> collector -> return -> tank
+ *   tank -> pump -> manifold -> branch 1 [valve -> IN sensor -> leak point -> OUT sensor] -> collector -> return -> tank
+ *                            -> branch 2 [valve]                                          -> collector
+ *
+ * Branch 2 carries no meters and no leak point, because the rig has none: see docs/PROTOCOL.md §0.
  */
 export type Vec = [number, number, number];
 
@@ -11,15 +14,14 @@ export const Y = 0.5;
 export const PIPE_R = 0.16;
 export const TANK_R = 1.25;
 export const TANK_H = 1.7;
-/** z of branch 1, 2, 3 (front to back is +z toward the camera). */
-export const BRANCH_Z: readonly [number, number, number] = [-1.6, 0, 1.6];
-export const RETURN_Z = 2.6;
+/** z of branch 1 (monitored) and branch 2 (backup); +z is toward the camera. */
+export const BRANCH_Z: readonly [number, number] = [-0.9, 0.9];
+export const RETURN_Z = 1.95;
 
 export const X = {
   tankC: -5.2,
   tankOut: -3.95,
   pump: -2.6,
-  master: -1.1,
   manifold: 0.4,
   valve: 1.7,
   inSensor: 2.75,
@@ -30,26 +32,32 @@ export const X = {
 
 /** Half-length of the tinted "leak point" pipe section. */
 export const LEAK_HALF = 0.42;
-export const MANIFOLD_HALF_Z = 1.9;
+export const MANIFOLD_HALF_Z = 1.25;
+
+/**
+ * Where a pipe's flow rate comes from:
+ *   number       index into tel.f (0 = branch 1 IN, 1 = branch 1 OUT) - measured
+ *   "main"/"ret" the shared line before/after the branches - the measured parts summed
+ *   "unmetered"  branch 2, which has no meter: animated from the valve and pump relays only
+ */
+export type RateSource = number | "main" | "ret" | "unmetered";
 
 export interface FlowPath {
   id: string;
   points: Vec[];
-  /** Sensor index into tel.f (0 = master, 2b-1 = branch IN, 2b = branch OUT) or "ret" for the sum of outflows. */
-  sensor: number | "ret";
+  sensor: RateSource;
 }
 
 /** Particle paths. Order matters only for the instance layout in Flow.tsx. */
 export const PATHS: FlowPath[] = [
-  { id: "main", points: [[X.tankOut, Y, 0], [X.manifold - 0.25, Y, 0]], sensor: 0 },
-  ...BRANCH_Z.flatMap((z, i): FlowPath[] => [
-    { id: `b${i + 1}in`, points: [[X.manifold + 0.25, Y, z], [X.leak, Y, z]], sensor: 2 * i + 1 },
-    { id: `b${i + 1}out`, points: [[X.leak, Y, z], [X.collector - 0.25, Y, z]], sensor: 2 * i + 2 },
-  ]),
+  { id: "main", points: [[X.tankOut, Y, 0], [X.manifold - 0.25, Y, 0]], sensor: "main" },
+  { id: "b1in", points: [[X.manifold + 0.25, Y, BRANCH_Z[0]], [X.leak, Y, BRANCH_Z[0]]], sensor: 0 },
+  { id: "b1out", points: [[X.leak, Y, BRANCH_Z[0]], [X.collector - 0.25, Y, BRANCH_Z[0]]], sensor: 1 },
+  { id: "b2", points: [[X.manifold + 0.25, Y, BRANCH_Z[1]], [X.collector - 0.25, Y, BRANCH_Z[1]]], sensor: "unmetered" },
   {
     id: "ret",
     points: [
-      [X.collector, Y, BRANCH_Z[2]],
+      [X.collector, Y, BRANCH_Z[1]],
       [X.collector, Y, RETURN_Z],
       [X.tankC, Y, RETURN_Z],
       [X.tankC, Y, TANK_R],

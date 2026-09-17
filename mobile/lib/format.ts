@@ -42,33 +42,35 @@ export function leakTone(level: LeakLevel): Tone {
 const SRC: Record<string, string> = {
   serial: "serial console",
   ws: "app",
-  http: "local HTTP",
   leak: "leak logic",
   wd: "watchdog",
   interlock: "interlock",
   boot: "boot",
 };
 
+const REASON: Record<string, string> = {
+  max_on: "maximum on-time reached",
+  all_closed: "no valve left open",
+  failover: "taking over from the leaking branch",
+};
+
 export function describeEvent(e: RigEvent, branches: Brand["branches"]): string {
   const name = e.b ? branches[e.b - 1] : "";
   const src = SRC[e.src] ?? e.src;
+  const why = e.reason ? `, ${REASON[e.reason] ?? e.reason}` : "";
   switch (e.ev) {
     case "leak":
       return `${name}: ${e.kind ?? "leak"} leak, ${e.loss?.toFixed(1) ?? "?"}% loss. Valve closed.`;
     case "leak_clear":
       return `Leak latches reset (${src}).`;
-    case "mleak":
-      return `Manifold leak, ${e.loss?.toFixed(1) ?? "?"}% loss. Pump stopped.`;
     case "valve":
-      return `${name} valve ${e.on ? "opened" : "closed"} (${src}${e.reason ? `, ${e.reason.replace("_", " ")}` : ""}).`;
+      return `${name} valve ${e.on ? "opened" : "closed"} (${src}${why}).`;
     case "pump":
-      return `Pump ${e.on ? "started" : "stopped"} (${src}${e.reason ? `, ${e.reason.replace("_", " ")}` : ""}).`;
+      return `Pump ${e.on ? "started" : "stopped"} (${src}${why}).`;
     case "all_off":
       return `All relays off (${src}).`;
     case "boot":
       return "Device booted.";
-    case "sim":
-      return `Simulation ${e.on ? "on" : "off"} (${src}).`;
     default:
       return `${e.ev}`;
   }
@@ -77,7 +79,6 @@ export function describeEvent(e: RigEvent, branches: Brand["branches"]): string 
 export function eventTone(e: RigEvent): Tone {
   switch (e.ev) {
     case "leak":
-    case "mleak":
       return "danger";
     case "all_off":
     case "leak_clear":

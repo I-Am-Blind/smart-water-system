@@ -4,8 +4,11 @@
  * and demoed without hardware.
  *
  *   pnpm fake                      connect to ws://localhost:3000/ws
- *   pnpm fake -- --url ws://host:3000/ws --leak 2 --quiet --hz 1
- *   keys (interactive): 1/2/3 toggle an injected leak on a branch, p pump, o go offline 15 s, q quit
+ *   pnpm fake -- --url ws://host:3000/ws --leak --quiet --hz 1
+ *   keys (interactive): l toggle the injected leak, 1/2 toggle a valve, p pump, o go offline 15 s, q quit
+ *
+ * Two branches, one metered: branch 1 has the IN/OUT pair, branch 2 is a valve only.
+ * A confirmed leak closes branch 1 and fails over to branch 2, like the firmware.
  */
 import { WebSocket } from "ws";
 import {
@@ -20,7 +23,7 @@ const has = (name: string): boolean => args.includes(`--${name}`);
 const url = flag("url") ?? "ws://localhost:3000/ws";
 const quiet = has("quiet");
 const hz = Number(flag("hz") ?? "1");
-const initialLeak = Number(flag("leak") ?? "0");
+const initialLeak = has("leak");
 const CTRL_C = "\u0003";
 
 const log = (m: string): void => { if (!quiet) console.log(`[fake] ${m}`); };
@@ -31,18 +34,18 @@ const LEAK_FRAC = 0.45;    // injected loss fraction
 const LEAK_PCT = 20;       // firmware drip threshold, percent
 const LEAK_CONFIRM_S = 3;
 
-const valves = [true, true, true];
+const valves = [true, false];        // branch 2 is the backup: closed until a failover or a command
 let pump = true;
-const leakInjected = [false, false, false];
-const leakLevel: LeakLevel[] = [0, 0, 0];
-const leakSecs = [0, 0, 0];
-const pulses = [0, 0, 0, 0, 0, 0, 0];
+let leakInjected = initialLeak;      // only branch 1 can leak: it is the only one with meters
+const leakLevel: LeakLevel[] = [0, 0];
+let leakSecs = 0;
+const pulses = [0, 0];               // b1i, b1o
 let seq = 0;
 let ntu = 12;
 let ppm = 310;
 const started = Date.now();
-const relayOnSince: (number | null)[] = [started, started, started, started]; // v1 v2 v3 pump
-if (initialLeak >= 1 && initialLeak <= 3) leakInjected[initialLeak - 1] = true;
+const relayOnSince: (number | null)[] = [started, null, started]; // v1, v2, pump
+const PUMP_IDX = 2;
 
 const ms = (): number => (Date.now() - started) >>> 0;
 const jitter = (v: number, pct: number): number => v * (1 + (Math.random() * 2 - 1) * pct);
@@ -53,61 +56,73 @@ let backoff = 1000;
 const send = (m: object): void => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
 const evt = (e: Omit<RigEvent, "t" | "ms">): void => { const full: RigEvent = { t: "evt", ms: ms(), ...e }; log(`evt ${JSON.stringify(e)}`); send(full); };
 
+/** Suspends the "no open valve -> stop the pump" interlock across a failover, as the firmware does. */
+let holdInterlock = false;
+
+function pumpInterlock(): void {
+  if (!holdInterlock && pump && !valves.some(Boolean)) setPump(false, "interlock", "all_closed");
+}
+
 function setValve(b: number, on: boolean, src: RigEvent["src"], reason?: RigEvent["reason"]): void {
   if (valves[b] === on) return;
   valves[b] = on;
   relayOnSince[b] = on ? Date.now() : null;
   evt({ ev: "valve", b: asBranch(b), on: on ? 1 : 0, src, ...(reason ? { reason } : {}) });
-  if (!on && !valves.some(Boolean) && pump) setPump(false, "interlock", "all_closed");
+  pumpInterlock();
 }
 
 function setPump(on: boolean, src: RigEvent["src"], reason?: RigEvent["reason"]): void {
   if (pump === on) return;
   pump = on;
-  relayOnSince[3] = on ? Date.now() : null;
+  relayOnSince[PUMP_IDX] = on ? Date.now() : null;
   evt({ ev: "pump", on: on ? 1 : 0, src, ...(reason ? { reason } : {}) });
 }
 
+/** Closes the leaking branch and opens the backup one, with the interlock held across the gap. */
+function failover(kind: "drip" | "burst", loss: number): void {
+  leakLevel[0] = kind === "burst" ? 3 : 2;
+  evt({ ev: "leak", b: 1, kind, loss: Math.round(loss * 10) / 10, src: "leak" });
+  holdInterlock = true;
+  setValve(0, false, "leak");
+  setValve(1, true, "leak", "failover");
+  holdInterlock = false;
+  pumpInterlock();
+}
+
 function tick(): Telemetry {
-  const f = [0, 0, 0, 0, 0, 0, 0];
-  const loss = [0, 0, 0];
-  for (let b = 0; b < 3; b++) {
-    const flowing = pump && valves[b];
-    const inL = flowing ? jitter(BASE_LPM, 0.03) : 0;
-    const outL = flowing ? inL * (1 - (leakInjected[b] ? LEAK_FRAC : 0.01)) * jitter(1, 0.02) : 0;
-    f[2 * b + 1] = inL;
-    f[2 * b + 2] = outL;
-    if (flowing && inL >= 0.5) {
-      loss[b] = Math.max(0, ((inL - outL) / inL) * 100);
-      if (loss[b] >= LEAK_PCT) {
-        if (++leakSecs[b] >= LEAK_CONFIRM_S && leakLevel[b] < 2) {
-          leakLevel[b] = loss[b] >= 50 ? 3 : 2;
-          evt({ ev: "leak", b: asBranch(b), kind: leakLevel[b] === 3 ? "burst" : "drip", loss: Math.round(loss[b] * 10) / 10, src: "leak" });
-          setValve(b, false, "leak");
-        } else if (leakLevel[b] === 0) {
-          leakLevel[b] = 1;
-        }
-      } else if (loss[b] < 10) {
-        leakSecs[b] = 0;
-        if (leakLevel[b] === 1) leakLevel[b] = 0;
+  // Only branch 1 is metered, so `f` and `loss` carry its numbers and branch 2 stays at 0.
+  const flowing = pump && valves[0];
+  const inL = flowing ? jitter(BASE_LPM, 0.03) : 0;
+  const outL = flowing ? inL * (1 - (leakInjected ? LEAK_FRAC : 0.01)) * jitter(1, 0.02) : 0;
+  const f = [inL, outL];
+  const loss = [0, 0];
+  if (flowing && inL >= 0.5) {
+    loss[0] = Math.max(0, ((inL - outL) / inL) * 100);
+    if (loss[0] >= LEAK_PCT) {
+      if (++leakSecs >= LEAK_CONFIRM_S && leakLevel[0] < 2) {
+        failover(loss[0] >= 50 ? "burst" : "drip", loss[0]);
+      } else if (leakLevel[0] === 0) {
+        leakLevel[0] = 1;
       }
-    } else {
-      leakSecs[b] = 0;
-      if (leakLevel[b] === 1) leakLevel[b] = 0;
+    } else if (loss[0] < 10) {
+      leakSecs = 0;
+      if (leakLevel[0] === 1) leakLevel[0] = 0;
     }
+  } else {
+    leakSecs = 0;
+    if (leakLevel[0] === 1) leakLevel[0] = 0;
   }
-  f[0] = (f[1] + f[3] + f[5]) * jitter(1, 0.02);
-  for (let i = 0; i < 7; i++) pulses[i] += Math.round(f[i] * HZ_PER_LPM);
+  for (let i = 0; i < pulses.length; i++) pulses[i] += Math.round(f[i] * HZ_PER_LPM);
   ntu = Math.max(0, ntu + (Math.random() - 0.5) * 0.6);
   ppm = Math.max(0, ppm + (Math.random() - 0.5) * 4);
 
   // relay max-on watchdogs, like the firmware
   const now = Date.now();
-  for (let b = 0; b < 3; b++) {
+  for (let b = 0; b < valves.length; b++) {
     const since = relayOnSince[b];
     if (valves[b] && since !== null && now - since > VALVE_MAX_ON_S * 1000) setValve(b, false, "wd", "max_on");
   }
-  const pumpSince = relayOnSince[3];
+  const pumpSince = relayOnSince[PUMP_IDX];
   if (pump && pumpSince !== null && now - pumpSince > PUMP_MAX_ON_S * 1000) setPump(false, "wd", "max_on");
 
   return {
@@ -115,7 +130,7 @@ function tick(): Telemetry {
     f: f.map((v) => Math.round(v * 100) / 100),
     p: [...pulses],
     loss: loss.map((v) => Math.round(v * 10) / 10),
-    leak: [...leakLevel], mleak: 0,
+    leak: [...leakLevel],
     v: valves.map((v): OnOff => (v ? 1 : 0)), pump: pump ? 1 : 0,
     turb: { mv: Math.round(2900 - ntu * 20), ntu: Math.round(ntu) },
     tds: { mv: Math.round(ppm * 1.35), ppm: Math.round(ppm) },
@@ -134,7 +149,7 @@ function handleCmd(c: DeviceCmd): void {
   log(`cmd ${JSON.stringify(c)}`);
   switch (c.act) {
     case "valve": {
-      if (!c.b || c.b < 1 || c.b > 3) { ack(false, "bad_branch"); return; }
+      if (!c.b || c.b < 1 || c.b > valves.length) { ack(false, "bad_branch"); return; }
       const b = c.b - 1;
       if (c.on && leakLevel[b] >= 2) { ack(false, "latched"); return; }
       setValve(b, Boolean(c.on), "ws");
@@ -147,23 +162,21 @@ function handleCmd(c: DeviceCmd): void {
       ack(true);
       return;
     case "all_off":
-      for (let b = 0; b < 3; b++) setValve(b, false, "ws");
+      holdInterlock = true;
+      for (let b = 0; b < valves.length; b++) setValve(b, false, "ws");
+      holdInterlock = false;
       setPump(false, "ws");
       evt({ ev: "all_off", src: "ws" });
       ack(true);
       return;
     case "reset_leak":
-      for (let b = 0; b < 3; b++) { leakLevel[b] = 0; leakSecs[b] = 0; }
+      leakLevel.fill(0);
+      leakSecs = 0;
       evt({ ev: "leak_clear", src: "ws" });
       ack(true);
       return;
     case "ping":
       ack(true, undefined, { ms: ms() });
-      return;
-    case "sim":
-      if (c.b && c.b >= 1 && c.b <= 3) leakInjected[c.b - 1] = Boolean(c.on);
-      evt({ ev: "sim", on: c.on ? 1 : 0, src: "ws" });
-      ack(true);
       return;
     default:
       ack(false, "unknown_act");
@@ -181,7 +194,10 @@ function connect(): void {
   ws = sock;
   sock.on("open", () => {
     backoff = 1000;
-    const hello: Hello = { t: "hello", proto: PROTO_VERSION, id: "sim", fw: "sim-1.0", ip: "127.0.0.1", rssi: -55, rst: "POWERON", sim: true };
+    const hello: Hello = {
+      t: "hello", proto: PROTO_VERSION, id: "sim", fw: "sim-1.0",
+      ip: "127.0.0.1", rssi: -55, rst: "POWERON", mon: [1, 0], sim: true,
+    };
     sock.send(JSON.stringify(hello));
     log("connected, hello sent");
     if (telTimer) clearInterval(telTimer);
@@ -215,11 +231,12 @@ if (process.stdin.isTTY && !quiet) {
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (k: string) => {
     if (k === "q" || k === CTRL_C) { console.log(); process.exit(0); }
-    if (k === "1" || k === "2" || k === "3") { const b = Number(k) - 1; leakInjected[b] = !leakInjected[b]; log(`leak on branch ${k}: ${leakInjected[b] ? "ON" : "off"}`); }
+    if (k === "l") { leakInjected = !leakInjected; log(`injected leak: ${leakInjected ? "ON" : "off"}`); }
+    if (k === "1" || k === "2") { const b = Number(k) - 1; setValve(b, !valves[b], "serial"); }
     if (k === "p") setPump(!pump, "serial");
     if (k === "o") goOffline(15);
   });
-  log("keys: 1/2/3 toggle leak, p pump, o offline 15 s, q quit");
+  log("keys: l toggle leak, 1/2 toggle a valve, p pump, o offline 15 s, q quit");
 }
 
 process.on("SIGTERM", () => process.exit(0));

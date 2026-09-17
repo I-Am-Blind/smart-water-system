@@ -10,8 +10,6 @@ import { getState, subscribe, useRig } from "@/lib/store";
 
 const WINDOWS = [5, 15, 30] as const;
 type WindowMin = (typeof WINDOWS)[number];
-/** Branch pairs use the neutral chart tokens; only the master line carries the brand colour. */
-const BRANCH_TOKENS = ["--chart-1", "--chart-2", "--chart-4"];
 
 function cssVar(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -35,8 +33,9 @@ function withGaps(data: [number[], ...number[][]]): uPlot.AlignedData {
 }
 
 /**
- * uPlot canvas of the seven flow meters. The ring buffer and the chart live outside React;
- * React owns the container, the range tabs and the legend line.
+ * uPlot canvas of the monitored branch's two flow meters - the only ones the rig has.
+ * The gap between the two lines is the loss the leak logic acts on. The ring buffer and the
+ * chart live outside React; React owns the container, the range tabs and the legend line.
  */
 export function FlowCard({ className = "" }: { className?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -54,8 +53,8 @@ export function FlowCard({ className = "" }: { className?: string }) {
     const accent = cssVar("--brand-accent", "#22d3ee");
     const muted = cssVar("--muted-foreground", "#a1a1a1");
     const grid = cssVar("--border", "rgba(255,255,255,0.1)");
-    const shades = BRANCH_TOKENS.map((t) => cssVar(t, "#888"));
-    setColors([accent, ...shades]);
+    const outColor = cssVar("--chart-2", "#888");
+    setColors([accent, outColor]);
     const fmt = (_u: uPlot, v: number | null) => (v == null ? "--" : v.toFixed(2));
     const axis: uPlot.Axis = { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid, width: 1 }, font: "12px Geist, sans-serif" };
     const opts: uPlot.Options = {
@@ -70,11 +69,8 @@ export function FlowCard({ className = "" }: { className?: string }) {
       ],
       series: [
         { label: "Time" },
-        { label: "Master", stroke: accent, width: 1.5, value: fmt },
-        ...([0, 1, 2] as const).flatMap((i) => [
-          { label: `${names[i]} in`, stroke: shades[i], width: 1.5, value: fmt },
-          { label: `${names[i]} out`, stroke: shades[i], width: 1.5, dash: [5, 4], value: fmt },
-        ]),
+        { label: `${names[0]} in`, stroke: accent, width: 1.5, value: fmt },
+        { label: `${names[0]} out`, stroke: outColor, width: 1.5, dash: [5, 4], value: fmt },
       ],
     };
     const u = new uPlot(opts, withGaps(ring.current.toData(windowRef.current * 60_000)), el);
@@ -133,7 +129,7 @@ export function FlowCard({ className = "" }: { className?: string }) {
     <Card className={className}>
       <CardHeader>
         <CardTitle>Flow, last {windowMin} minutes</CardTitle>
-        <CardDescription>L/min</CardDescription>
+        <CardDescription>L/min through {names[0]}</CardDescription>
         <CardAction>
           <Tabs value={String(windowMin)} onValueChange={(v) => setWindowMin(Number(v) as WindowMin)}>
             <TabsList>
@@ -147,13 +143,19 @@ export function FlowCard({ className = "" }: { className?: string }) {
       <CardContent className="flex flex-col gap-3">
         <div ref={host} className="h-[260px] w-full [&_.uplot]:h-full" />
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {["Master", ...names].map((n, i) => (
+          {[`${names[0]} in`, `${names[0]} out`].map((n, i) => (
             <li key={n} className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="inline-block h-0.5 w-4" style={{ background: colors[i] ?? "currentColor" }} />
+              <span
+                aria-hidden="true"
+                className="inline-block h-0.5 w-4"
+                style={i === 1
+                  ? { backgroundImage: `repeating-linear-gradient(to right, ${colors[1] ?? "currentColor"} 0 5px, transparent 5px 9px)` }
+                  : { background: colors[0] ?? "currentColor" }}
+              />
               {n}
             </li>
           ))}
-          <li>dashed line = out meter</li>
+          <li>{names[1]} has no meters</li>
         </ul>
       </CardContent>
     </Card>

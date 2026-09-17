@@ -27,7 +27,7 @@ export function readBrandFromDisk(): Brand {
   return {
     name: b.name, shortName: b.shortName, tagline: b.tagline, deviceName: b.deviceName,
     team: b.team ?? "", school: b.school ?? "",
-    branches: [b.branches[0], b.branches[1], b.branches[2]],
+    branches: [b.branches[0], b.branches[1]],
     colors: b.colors, showQr: b.showQr,
   };
 }

@@ -1,7 +1,7 @@
 /**
  * Shared UI primitives following docs/DESIGN.md v2 (shadcn neutral, dark only):
  * near-black neutral surfaces, 1 px borders, radius 10, no shadows/gradients, sentence case,
- * tabular numerals. brand.colors.accent is used only for the master-flow reading while flowing
+ * tabular numerals. brand.colors.accent is used only for the inflow reading while water is moving
  * and the checked switch track; red/amber only as status signals; green only for the online dot.
  */
 import type { ReactNode } from "react";

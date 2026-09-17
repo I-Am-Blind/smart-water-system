@@ -37,8 +37,9 @@ export function Toasts() {
         if (newest.ev === "leak") {
           const where = newest.b ? names[newest.b - 1] : "a branch";
           toast.error(`${newest.kind === "burst" ? "Burst" : "Drip leak"} on ${where}. Its valve was closed.`, { duration: 8000 });
-        } else if (newest.ev === "mleak") {
-          toast.error("Leak before the branches. The pump was stopped.", { duration: 8000 });
+        } else if (newest.ev === "valve" && newest.reason === "failover") {
+          const where = newest.b ? names[newest.b - 1] : "the backup branch";
+          toast.warning(`Water switched to ${where}.`, { duration: 8000 });
         }
       }
     });

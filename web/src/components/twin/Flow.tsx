@@ -4,14 +4,14 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { InstancedMesh, Object3D } from "three";
 import { PATHS, buildPathGeom, pointAt, type FlowPath } from "./layout";
-import { liveRate, liveReturnRate, reducedMotion } from "./live";
+import { rateOf, reducedMotion } from "./live";
 import { useTwin } from "./theme";
 
 const PER_PATH = 36;
 const COUNT = PATHS.length * PER_PATH;
 
 function rateFor(p: FlowPath): number {
-  return p.sensor === "ret" ? liveReturnRate() : liveRate(p.sensor);
+  return rateOf(p.sensor);
 }
 
 /**

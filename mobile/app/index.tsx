@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { DEFAULT_WS_URL, PUMP_UI_DUR_S, type Branch, type LeakLevel } from "../../packages/protocol/types";
+import { DEFAULT_MON, DEFAULT_WS_URL, isMonitored, PUMP_UI_DUR_S, type Branch, type LeakLevel } from "../../packages/protocol/types";
 import { ago, describeError, fmtLpm, LEAK_BADGE, since } from "../lib/format";
 import { clearError, sendCmd, useRig } from "../lib/store";
 import { Badge, Btn, Card, Hairline, Row, Tile, useColors } from "../lib/ui";
@@ -84,19 +84,17 @@ function ErrorNotice() {
 /** Four section cards in a 2 x 2 grid, all values straight from the tel message. */
 function Tiles() {
   const p = useColors();
-  const master = useRig((s) => s.tel?.f[0] ?? 0);
+  const name1 = useRig((s) => s.brand.branches[0]);
+  const inflow = useRig((s) => s.tel?.f[0] ?? 0);
   const pump = useRig((s) => s.tel?.pump === 1);
-  const mleak = useRig((s) => s.tel?.mleak === 1);
-  const lost = useRig((s) => Math.max(0, ...(s.tel?.loss ?? [0])));
+  const lost = useRig((s) => s.tel?.loss[0] ?? 0);
   const ntu = useRig((s) => s.tel?.turb.ntu ?? 0);
   const ppm = useRig((s) => s.tel?.tds.ppm ?? 0);
   return (
     <View style={styles.grid}>
-      <Tile label="Master flow" value={fmtLpm(master)} unit="L/min" color={master > 0 ? p.accent : undefined} />
-      <Tile label="Pump" value={pump ? "Running" : "Off"}>
-        {mleak ? <Row><Badge text="Leak" variant="destructive" /><Text style={{ color: p.muted, fontSize: 12 }}>before the branches</Text></Row> : null}
-      </Tile>
-      <Tile label="Water lost" value={lost.toFixed(1)} unit="%" note="largest in/out difference across branches" />
+      <Tile label="Water in" value={fmtLpm(inflow)} unit="L/min" note={`entering ${name1}`} color={inflow > 0 ? p.accent : undefined} />
+      <Tile label="Pump" value={pump ? "Running" : "Off"} />
+      <Tile label="Water lost" value={lost.toFixed(1)} unit="%" note={`in/out difference on ${name1}`} />
       <Tile label="Turbidity / TDS" value={`${ntu}`} unit={`NTU, ${ppm} ppm`} note="clear water is under 5 NTU, drinking water is usually under 500 ppm" />
     </View>
   );
@@ -105,8 +103,10 @@ function Tiles() {
 function BranchRow({ b, last }: { b: Branch; last: boolean }) {
   const p = useColors();
   const name = useRig((s) => s.brand.branches[b - 1]);
-  const inLpm = useRig((s) => s.tel?.f[2 * b - 1] ?? 0);
-  const outLpm = useRig((s) => s.tel?.f[2 * b] ?? 0);
+  // Only the monitored branch has meters, and `f` holds its IN/OUT pair. See docs/PROTOCOL.md §0.
+  const sensed = useRig((s) => isMonitored(b, s.info?.mon ?? DEFAULT_MON));
+  const inLpm = useRig((s) => s.tel?.f[0] ?? 0);
+  const outLpm = useRig((s) => s.tel?.f[1] ?? 0);
   const loss = useRig((s) => s.tel?.loss[b - 1] ?? 0);
   const leak = useRig((s) => (s.tel?.leak[b - 1] ?? 0) as LeakLevel);
   const open = useRig((s) => s.tel?.v[b - 1] === 1);
@@ -115,7 +115,11 @@ function BranchRow({ b, last }: { b: Branch; last: boolean }) {
   const latched = leak >= 2;
   const disabled = !online || busy || latched;
   const hint = !online ? "Rig offline" : latched ? "Clear the leak first" : null;
-  const lossText = latched ? "closed by leak protection" : !open ? "valve closed" : `loss ${loss.toFixed(1)} %`;
+  const lossText = latched
+    ? "closed by leak protection"
+    : !open ? "valve closed"
+    : sensed ? `loss ${loss.toFixed(1)} %`
+    : "valve open";
   return (
     <>
       <View style={styles.branchRow}>
@@ -125,10 +129,14 @@ function BranchRow({ b, last }: { b: Branch; last: boolean }) {
             {leak === 1 ? <Badge text={LEAK_BADGE[1]} color={p.warn} /> : null}
             {latched ? <Badge text={LEAK_BADGE[leak]} variant="destructive" /> : null}
           </Row>
-          <Text style={[styles.nums, { color: p.text }]}>
-            {fmtLpm(inLpm)} → {fmtLpm(outLpm)}
-            <Text style={{ color: p.muted, fontSize: 13 }}> L/min</Text>
-          </Text>
+          {sensed ? (
+            <Text style={[styles.nums, { color: p.text }]}>
+              {fmtLpm(inLpm)} → {fmtLpm(outLpm)}
+              <Text style={{ color: p.muted, fontSize: 13 }}> L/min</Text>
+            </Text>
+          ) : (
+            <Text style={{ color: p.muted, fontSize: 13 }}>No flow meters on this branch</Text>
+          )}
           <Text style={[styles.nums, { color: leak === 1 ? p.warn : p.muted, fontSize: 13 }]}>{lossText}</Text>
           {hint ? <Text style={{ color: p.muted, fontSize: 12 }}>{hint}</Text> : null}
         </View>
@@ -156,7 +164,7 @@ function Branches() {
   const p = useColors();
   const pump = useRig((s) => s.tel?.pump === 1);
   const anyValveOpen = useRig((s) => (s.tel?.v ?? []).some((v) => v === 1));
-  const anyLatched = useRig((s) => (s.tel?.leak ?? []).some((l) => l >= 2) || s.tel?.mleak === 1);
+  const anyLatched = useRig((s) => (s.tel?.leak ?? []).some((l) => l >= 2));
   const online = useRig((s) => s.conn === "open" && s.online);
   const busyPump = useRig((s) => Object.values(s.pending).some((c) => c.act === "pump"));
   const busyReset = useRig((s) => Object.values(s.pending).some((c) => c.act === "reset_leak"));
@@ -164,7 +172,7 @@ function Branches() {
   const runPump = async () => {
     const ok = await confirmAsync(
       `Run pump for ${PUMP_UI_DUR_S / 60} minutes?`,
-      "The pump stops by itself after 2 minutes, when the last valve closes, or when a leak is detected.",
+      "The pump stops by itself after 2 minutes or when the last valve closes.",
       "Run pump",
     );
     if (ok) sendCmd({ act: "pump", on: true, dur: PUMP_UI_DUR_S });
@@ -174,8 +182,7 @@ function Branches() {
     <Card title="Branches" flush>
       <Hairline />
       <BranchRow b={1} last={false} />
-      <BranchRow b={2} last={false} />
-      <BranchRow b={3} last />
+      <BranchRow b={2} last />
       <Hairline />
       <View style={styles.footer}>
         {pump ? (

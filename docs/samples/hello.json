@@ -1,1 +1,1 @@
-{"t":"hello","proto":1,"id":"rig-7a3f21","fw":"1.0.0","ip":"192.168.0.42","rssi":-58,"rst":"POWERON","sim":false}
+{"t":"hello","proto":1,"id":"rig-7a3f21","fw":"2.0.0","ip":"192.168.0.42","rssi":-58,"rst":"POWERON","mon":[1,0],"sim":false}

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { Vector3 } from "three";
 import type { Brand } from "@proto/types";
 import { LABEL_ANCHORS, type LabelAlign, type Vec } from "./layout";
-import { live, liveRate } from "./live";
+import { live, liveRate, liveValveOpen } from "./live";
 
 export interface LabelEntry {
   key: string;
@@ -18,6 +18,16 @@ export interface LabelEntry {
 export type LabelRegistry = LabelEntry[];
 
 const f2 = (n: number) => n.toFixed(2);
+
+/**
+ * Branch 1 has both meters, so its chip prints in → out. Branch 2 has none, so it prints the
+ * valve relay state and says so, rather than a number nothing measured. See docs/PROTOCOL.md §0.
+ */
+function branchValue(i: number): string {
+  if (i === 0) return `${f2(liveRate(0))} → ${f2(liveRate(1))} L/min`;
+  if (!live.tel || !live.online) return "no meter";
+  return `valve ${liveValveOpen(2) ? "open" : "closed"}, no meter`;
+}
 
 /** One registry per Twin instance: DOM nodes are attached by LabelsDom, positions written by LabelProjector. */
 export function createRegistry(): LabelRegistry {
@@ -33,7 +43,7 @@ export function createRegistry(): LabelRegistry {
       align: b.align,
       el: null,
       valueEl: null,
-      value: () => `${f2(liveRate(2 * i + 1))} → ${f2(liveRate(2 * i + 2))} L/min`,
+      value: () => branchValue(i),
     });
   });
   return entries;

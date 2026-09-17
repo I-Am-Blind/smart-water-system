@@ -18,16 +18,14 @@ export function onServerMessage(msg: ServerToViewer): void {
         if (msg.kind === "burst") audio.burst(); else audio.alarm();
         audio.speak(`Warning. ${msg.kind === "burst" ? "Burst" : "Leak"} detected on ${branchName(msg.b)}. Valve closed.`);
         break;
-      case "mleak":
-        audio.alarm();
-        audio.speak("Warning. Manifold leak detected. Pump stopped.");
-        break;
       case "leak_clear":
         audio.success();
         audio.speak("Leak alarm reset.");
         break;
       case "valve":
         if (msg.on) audio.valveOpen(); else audio.valveClose();
+        // The backup branch opening on its own is the part of the story worth narrating.
+        if (msg.reason === "failover") audio.speak(`Switching to ${branchName(msg.b)}.`);
         break;
       case "pump":
         if (msg.on) audio.pumpOn(); else audio.pumpOff();

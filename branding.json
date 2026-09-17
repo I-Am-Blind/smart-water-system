@@ -6,7 +6,7 @@
   "deviceName": "rig",
   "team": "",
   "school": "",
-  "branches": ["Branch 1", "Branch 2", "Branch 3"],
+  "branches": ["Monitored line", "Backup line"],
   "colors": {
     "bg": "#0a1224",
     "accent": "#22d3ee",

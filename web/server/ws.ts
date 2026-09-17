@@ -102,7 +102,7 @@ export class Hub {
     }
     this.device = ws;
     this.state.info = hello;
-    log("WS", `device hello id=${hello.id} fw=${hello.fw} ip=${hello.ip} rst=${hello.rst} sim=${hello.sim}`);
+    log("WS", `device hello id=${hello.id} fw=${hello.fw} ip=${hello.ip} rst=${hello.rst} mon=[${hello.mon.join(",")}]`);
     const welcome: Welcome = { t: "welcome", now: Date.now() };
     this.sendJson(ws, welcome);
     ws.on("message", (data) => {

@@ -17,7 +17,7 @@ const fail = (m) => { console.error(`gen-branding: ${m}`); process.exit(1); };
 if (typeof b.name !== "string" || !b.name) fail("name is required");
 if (typeof b.shortName !== "string" || !b.shortName) fail("shortName is required");
 if (!/^[a-z0-9-]{1,24}$/.test(b.deviceName ?? "")) fail("deviceName must match ^[a-z0-9-]{1,24}$");
-if (!Array.isArray(b.branches) || b.branches.length !== 3) fail("branches must have exactly 3 entries");
+if (!Array.isArray(b.branches) || b.branches.length !== 2) fail("branches must have exactly 2 entries");
 
 // Firmware logs are ASCII-only: strip anything outside printable ASCII, escape for a C string literal.
 const cstr = (s) => String(s).replace(/[^\x20-\x7e]/g, "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -29,7 +29,6 @@ const h = `// GENERATED FILE - do not edit. Source: branding.json  (node scripts
 #define BRAND_DEVICE_NAME "${cstr(b.deviceName)}"
 #define BRAND_BRANCH_1    "${cstr(b.branches[0])}"
 #define BRAND_BRANCH_2    "${cstr(b.branches[1])}"
-#define BRAND_BRANCH_3    "${cstr(b.branches[2])}"
 `;
 writeFileSync(out, h);
 console.log(`gen-branding: wrote ${out}`);

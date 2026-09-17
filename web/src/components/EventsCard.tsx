@@ -8,7 +8,6 @@ import { fmtHms } from "@/components/status";
 const BY: Record<RigEvent["src"], string> = {
   serial: "from the serial console",
   ws: "from the dashboard",
-  http: "over the local link",
   leak: "by leak protection",
   wd: "by the time limit",
   interlock: "by the interlock",
@@ -18,7 +17,7 @@ const BY: Record<RigEvent["src"], string> = {
 const BECAUSE: Record<NonNullable<RigEvent["reason"]>, string> = {
   max_on: "time limit reached",
   all_closed: "every valve is closed",
-  manifold: "leak before the branches",
+  failover: "taking over from the leaking branch",
 };
 
 function describe(e: Stamped<RigEvent>, names: readonly string[]): string {
@@ -30,8 +29,6 @@ function describe(e: Stamped<RigEvent>, names: readonly string[]): string {
       return `${e.kind === "burst" ? "Burst" : "Drip leak"} on ${where}, ${e.loss?.toFixed(0) ?? "?"} % lost. Valve closed.`;
     case "leak_clear":
       return `Leak alarm cleared ${by}.`;
-    case "mleak":
-      return `Leak before the branches, ${e.loss?.toFixed(0) ?? "?"} % of the master flow missing. Pump stopped.`;
     case "valve":
       return `${where} valve ${e.on ? "opened" : "closed"} ${by}${because}.`;
     case "pump":
@@ -40,8 +37,6 @@ function describe(e: Stamped<RigEvent>, names: readonly string[]): string {
       return `Everything switched off ${by}.`;
     case "boot":
       return "Rig started.";
-    case "sim":
-      return `Simulation ${e.on ? "on" : "off"} ${by}.`;
     default:
       return e.ev;
   }
@@ -72,7 +67,7 @@ export function EventsCard({ className = "" }: { className?: string }) {
               {rows.map((e) => (
                 <TableRow key={`${e.at}-${e.ms}-${e.ev}`}>
                   <TableCell className="pl-4 text-muted-foreground">{fmtHms(e.at)}</TableCell>
-                  <TableCell className={`whitespace-normal pr-4 ${e.ev === "leak" || e.ev === "mleak" ? "text-destructive" : ""}`}>{describe(e, names)}</TableCell>
+                  <TableCell className={`whitespace-normal pr-4 ${e.ev === "leak" ? "text-destructive" : ""}`}>{describe(e, names)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

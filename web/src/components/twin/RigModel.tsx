@@ -5,8 +5,8 @@ import { useFrame } from "@react-three/fiber";
 import { DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Vector3 } from "three";
 import type { Color } from "three";
 import type { LeakLevel } from "@proto/types";
-import { BRANCH_Z, LEAK_HALF, MANIFOLD_HALF_Z, PIPE_R, RETURN_Z, TANK_H, TANK_R, X, Y, type Vec } from "./layout";
-import { liveRate, liveReturnRate } from "./live";
+import { BRANCH_Z, LEAK_HALF, MANIFOLD_HALF_Z, PIPE_R, RETURN_Z, TANK_H, TANK_R, X, Y, type RateSource, type Vec } from "./layout";
+import { liveRate, rateOf } from "./live";
 import { useTwin } from "./theme";
 import type { Discrete } from "./discrete";
 
@@ -39,7 +39,7 @@ function Pipe({ from, to, color }: { from: Vec; to: Vec; color: Color }) {
 }
 
 /** Emissive cyan core inside a pipe; visible only while that segment carries flow, brighter with more L/min. */
-function WaterTube({ from, to, sensor }: { from: Vec; to: Vec; sensor: number | "ret" }) {
+function WaterTube({ from, to, sensor }: { from: Vec; to: Vec; sensor: RateSource }) {
   const { theme } = useTwin();
   const { position, quaternion, length } = useSegment(from, to);
   const mesh = useRef<Mesh>(null);
@@ -48,7 +48,7 @@ function WaterTube({ from, to, sensor }: { from: Vec; to: Vec; sensor: number | 
     const m = mesh.current;
     const mm = mat.current;
     if (!m || !mm) return;
-    const rate = sensor === "ret" ? liveReturnRate() : liveRate(sensor);
+    const rate = rateOf(sensor);
     const vis = rate > 0.03;
     m.visible = vis;
     if (vis) mm.color.copy(theme.water).multiplyScalar(Math.min(1.9, 0.7 + rate * 0.6));
@@ -218,12 +218,12 @@ function LeakSegment({ z, level }: { z: number; level: LeakLevel }) {
 
 // Static endpoints (module constants keep useSegment's memo stable).
 const MAIN: [Vec, Vec] = [[X.tankOut, Y, 0], [X.manifold - 0.25, Y, 0]];
-const BRANCH_PIPES = BRANCH_Z.map((z): { z: number; a: [Vec, Vec]; b: [Vec, Vec] } => ({
-  z,
-  a: [[X.manifold + 0.25, Y, z], [X.leak - LEAK_HALF, Y, z]],
-  b: [[X.leak + LEAK_HALF, Y, z], [X.collector - 0.25, Y, z]],
-}));
-const RET1: [Vec, Vec] = [[X.collector, Y, BRANCH_Z[2]], [X.collector, Y, RETURN_Z]];
+/** Branch 1 is the monitored lane: meters either side of a leak point. */
+const B1_IN: [Vec, Vec] = [[X.manifold + 0.25, Y, BRANCH_Z[0]], [X.leak - LEAK_HALF, Y, BRANCH_Z[0]]];
+const B1_OUT: [Vec, Vec] = [[X.leak + LEAK_HALF, Y, BRANCH_Z[0]], [X.collector - 0.25, Y, BRANCH_Z[0]]];
+/** Branch 2 is one plain run: a valve and nothing to measure with. */
+const B2: [Vec, Vec] = [[X.manifold + 0.25, Y, BRANCH_Z[1]], [X.collector - 0.25, Y, BRANCH_Z[1]]];
+const RET1: [Vec, Vec] = [[X.collector, Y, BRANCH_Z[1]], [X.collector, Y, RETURN_Z]];
 const RET2: [Vec, Vec] = [[X.collector, Y, RETURN_Z], [X.tankC, Y, RETURN_Z]];
 const RET3: [Vec, Vec] = [[X.tankC, Y, RETURN_Z], [X.tankC, Y, TANK_R]];
 const RET_J1: Vec = [X.collector, Y, RETURN_Z];
@@ -236,24 +236,25 @@ export default function RigModel({ state }: { state: Discrete }) {
   return (
     <group>
       <Tank />
-      <WaterTube from={MAIN[0]} to={MAIN[1]} sensor={0} />
+      <WaterTube from={MAIN[0]} to={MAIN[1]} sensor="main" />
       <Pipe from={MAIN[0]} to={MAIN[1]} color={pipe} />
       <Pump on={state.pump} />
-      <Sensor x={X.master} z={0} sensor={0} />
       <Block x={X.manifold} color={theme.metal} />
 
-      {BRANCH_PIPES.map((bp, i) => (
-        <group key={bp.z}>
-          <WaterTube from={bp.a[0]} to={bp.a[1]} sensor={2 * i + 1} />
-          <WaterTube from={bp.b[0]} to={bp.b[1]} sensor={2 * i + 2} />
-          <Pipe from={bp.a[0]} to={bp.a[1]} color={pipe} />
-          <LeakSegment z={bp.z} level={state.leak[i]} />
-          <Pipe from={bp.b[0]} to={bp.b[1]} color={pipe} />
-          <Valve x={X.valve} z={bp.z} open={state.valves[i]} latched={state.leak[i] >= 2} />
-          <Sensor x={X.inSensor} z={bp.z} sensor={2 * i + 1} />
-          <Sensor x={X.outSensor} z={bp.z} sensor={2 * i + 2} />
-        </group>
-      ))}
+      {/* branch 1: valve, IN meter, leak point, OUT meter */}
+      <WaterTube from={B1_IN[0]} to={B1_IN[1]} sensor={0} />
+      <WaterTube from={B1_OUT[0]} to={B1_OUT[1]} sensor={1} />
+      <Pipe from={B1_IN[0]} to={B1_IN[1]} color={pipe} />
+      <LeakSegment z={BRANCH_Z[0]} level={state.leak[0]} />
+      <Pipe from={B1_OUT[0]} to={B1_OUT[1]} color={pipe} />
+      <Valve x={X.valve} z={BRANCH_Z[0]} open={state.valves[0]} latched={state.leak[0] >= 2} />
+      <Sensor x={X.inSensor} z={BRANCH_Z[0]} sensor={0} />
+      <Sensor x={X.outSensor} z={BRANCH_Z[0]} sensor={1} />
+
+      {/* branch 2: a valve on a bare pipe - no meters exist on this lane */}
+      <WaterTube from={B2[0]} to={B2[1]} sensor="unmetered" />
+      <Pipe from={B2[0]} to={B2[1]} color={pipe} />
+      <Valve x={X.valve} z={BRANCH_Z[1]} open={state.valves[1]} latched={false} />
 
       <Block x={X.collector} color={theme.metal} />
       <WaterTube from={RET1[0]} to={RET1[1]} sensor="ret" />

@@ -22,7 +22,7 @@ pnpm start          # http://localhost:3000  (LAN URL is printed; also shown as 
 ## Without hardware
 
 ```bash
-pnpm fake            # simulated rig; keys 1/2/3 inject a leak, p pump, o offline 15 s, q quit
+pnpm fake            # simulated rig; keys l leak, 1/2 valves, p pump, o offline 15 s, q quit
 pnpm smoke           # end-to-end check against a running server, prints SMOKE OK
 pnpm test            # golden protocol samples validate
 ```
@@ -43,11 +43,12 @@ every open browser updates live.
 
 Built on shadcn/ui (`src/components/ui/*`, added with `pnpm dlx shadcn@latest add <name>`; neutral theme, dark only)
 and Tailwind v4, following `docs/DESIGN.md`. Type is Geist with tabular numerals. The only brand colour on the page is
-`--brand-accent` (from `branding.json`): water in the 3D twin and the master line in the chart.
+`--brand-accent` (from `branding.json`): water in the 3D twin and the inflow line in the chart.
 
 - `src/app/page.tsx` composes the screen: `AppHeader` (rig status, menu with "Open on phone" and "Sound alerts", All off),
-  `SectionCards` (master flow, pump, water lost, water quality), `RigCard` (3D twin from `src/components/twin`, loaded
-  client-side by `RigCanvas`), `BranchesCard` (table of the three branches with valve switches, pump and clear-leak actions),
+  `SectionCards` (water in, pump, water lost, water quality), `RigCard` (3D twin from `src/components/twin`, loaded
+  client-side by `RigCanvas`), `BranchesCard` (both branches with valve switches, pump and clear-leak actions; the
+  unmetered branch shows dashes instead of numbers),
   `EventsCard` (last 12 events), `FlowCard` (uPlot, data kept outside React), plus `PhoneDialog`, `Toasts`, `BrandVars`, `Boot`.
 - Live state comes from `src/lib/store.ts` (`useRig(selector)`); components select primitives or stable slices so the
   1 Hz telemetry only re-renders what changed.

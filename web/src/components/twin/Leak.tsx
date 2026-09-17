@@ -34,8 +34,13 @@ function PulseLight({ position, color }: { position: [number, number, number]; c
   return <pointLight ref={ref} position={position} color={color} intensity={6} distance={7} decay={2} />;
 }
 
-/** Ballistic droplets from each branch's leak point; count and strength follow the leak level. */
-export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel, LeakLevel] }) {
+const BRANCHES = 2;
+
+/**
+ * Ballistic droplets from each branch's leak point; count and strength follow the leak level.
+ * Only branch 1 has meters, so in practice only its level can ever rise - see docs/PROTOCOL.md §0.
+ */
+export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel] }) {
   const { theme } = useTwin();
   const ref = useRef<InstancedMesh>(null);
   const lv = useRef(levels);
@@ -45,7 +50,7 @@ export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel, LeakLe
 
   const drops = useMemo(() => {
     const rnd = mulberry32(1234);
-    const n = 3 * MAX;
+    const n = BRANCHES * MAX;
     const vx = new Float32Array(n);
     const vy = new Float32Array(n);
     const vz = new Float32Array(n);
@@ -68,7 +73,7 @@ export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel, LeakLe
     if (!mesh) return;
     dummy.scale.setScalar(0);
     dummy.updateMatrix();
-    for (let i = 0; i < 3 * MAX; i++) mesh.setMatrixAt(i, dummy.matrix);
+    for (let i = 0; i < BRANCHES * MAX; i++) mesh.setMatrixAt(i, dummy.matrix);
     mesh.instanceMatrix.needsUpdate = true;
   }, [dummy]);
 
@@ -76,7 +81,7 @@ export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel, LeakLe
     const mesh = ref.current;
     if (!mesh) return;
     const t = still ? 0.35 : s.clock.elapsedTime; // reduced motion: a frozen burst instead of animated spray
-    for (let b = 0; b < 3; b++) {
+    for (let b = 0; b < BRANCHES; b++) {
       const level = lv.current[b];
       const n = ACTIVE[level];
       const k = STRENGTH[level];
@@ -106,7 +111,7 @@ export default function Leak({ levels }: { levels: [LeakLevel, LeakLevel, LeakLe
 
   return (
     <group>
-      <instancedMesh ref={ref} args={[undefined, undefined, 3 * MAX]} frustumCulled={false}>
+      <instancedMesh ref={ref} args={[undefined, undefined, BRANCHES * MAX]} frustumCulled={false}>
         <sphereGeometry args={[0.09, 6, 6]} />
         <meshBasicMaterial color={theme.danger} toneMapped={false} transparent opacity={0.9} />
       </instancedMesh>

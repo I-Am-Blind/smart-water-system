@@ -46,7 +46,7 @@ Because the server is reached over plain `ws://` on the LAN, a standalone Androi
 | File | Purpose |
 |---|---|
 | `app/_layout.tsx` | Tabs (Dashboard, Events, Settings), theme from branding, starts the socket |
-| `app/index.tsx` | Dashboard: status line with All off, four stat tiles (master flow, pump, water lost, turbidity/TDS), Branches card with valve switches, pump and Clear leak buttons |
+| `app/index.tsx` | Dashboard: status line with All off, four stat tiles (water in, pump, water lost, turbidity/TDS), Branches card with valve switches, pump and Clear leak buttons |
 | `app/events.tsx` | Event log, newest first |
 | `app/settings.tsx` | Server URL (persisted), connection state, rig id and IP |
 | `lib/store.ts` | External store, `useRig(selector)`, `sendCmd()` (same shape as the web store) |

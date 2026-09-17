@@ -2,6 +2,8 @@
 
 This sketch checks the wiring and health of the rig. It never switches a relay on by itself; relays only move when you press the keys listed at the bottom, and any relay you switch on turns itself off again after 20 seconds.
 
+It still sweeps the full original wiring — 7 flow inputs and 3 solenoid relays — which is exactly what you want when hunting a fault. The rig as built uses two branches, one IN/OUT sensor pair and two solenoids (`docs/PROTOCOL.md` §0), so the extra inputs reading zero here is expected, not a failure.
+
 ## Arduino IDE settings (Tools menu)
 
 Install the **esp32 by Espressif Systems** board package (3.x) from Boards Manager first. Then set:

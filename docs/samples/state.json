@@ -1,9 +1,9 @@
 {"t":"state","now":1725900001000,"online":true,"lastSeen":1725900000900,
- "info":{"t":"hello","proto":1,"id":"rig-7a3f21","fw":"1.0.0","ip":"192.168.0.42","rssi":-58,"rst":"POWERON","sim":false},
- "tel":{"t":"tel","at":1725900000900,"ms":123456,"seq":120,"f":[3.61,1.22,1.20,1.21,0.58,1.18,1.17],"p":[3541234,1200011,1180002,1199870,600120,1170022,1160500],"loss":[1.6,52.1,0.8],"leak":[0,3,0],"mleak":0,"v":[1,0,1],"pump":1,"turb":{"mv":2410,"ntu":14},"tds":{"mv":420,"ppm":186},"rssi":-58,"up":123,"heap":215000,"sim":false},
+ "info":{"t":"hello","proto":1,"id":"rig-7a3f21","fw":"2.0.0","ip":"192.168.0.42","rssi":-58,"rst":"POWERON","mon":[1,0],"sim":false},
+ "tel":{"t":"tel","at":1725900000900,"ms":123456,"seq":120,"f":[1.21,0.58],"p":[1199870,600120],"loss":[52.1,0],"leak":[3,0],"v":[0,1],"pump":1,"turb":{"mv":2410,"ntu":14},"tds":{"mv":420,"ppm":186},"rssi":-58,"up":123,"heap":215000,"sim":false},
  "events":[
-  {"t":"evt","at":1725900000500,"ms":123999,"ev":"valve","b":2,"on":0,"src":"leak"},
-  {"t":"evt","at":1725900000000,"ms":123456,"ev":"leak","b":2,"kind":"burst","loss":62.5,"src":"leak"}
+  {"t":"evt","at":1725900000500,"ms":123999,"ev":"valve","b":1,"on":0,"src":"leak"},
+  {"t":"evt","at":1725900000000,"ms":123456,"ev":"leak","b":1,"kind":"burst","loss":62.5,"src":"leak"}
  ],
- "brand":{"name":"Cascade","shortName":"Cascade","tagline":"Autonomous leak detection for every drop","deviceName":"rig","team":"","school":"","branches":["Branch 1","Branch 2","Branch 3"],"colors":{"bg":"#0a1224","accent":"#22d3ee","ok":"#34d399","warn":"#fbbf24","danger":"#f43f5e"},"showQr":true},
- "serverUrl":"http://192.168.0.3:3000"}
+ "brand":{"name":"Cascade","shortName":"Cascade","tagline":"Autonomous leak detection for every drop","deviceName":"rig","team":"","school":"","branches":["Monitored line","Backup line"],"colors":{"bg":"#0a1224","accent":"#22d3ee","ok":"#34d399","warn":"#fbbf24","danger":"#f43f5e"},"showQr":true},
+ "serverUrl":"http://192.168.0.8:3000"}

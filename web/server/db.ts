@@ -6,7 +6,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { Hello, HistoryResponse, RigEvent, Stamped, Telemetry } from "@proto/types";
-import { logError } from "./log";
+import { log, logError } from "./log";
 
 export const DB_PATH = path.join(import.meta.dirname, "..", "data", "rig.db");
 const TEL_RETENTION_MS = 24 * 3600_000;
@@ -14,14 +14,17 @@ const EVT_RETENTION_MS = 7 * 24 * 3600_000;
 const MAX_POINTS = 600;
 const FLUSH_AT = 30; // rows buffered before an early flush
 
-const DDL = `
+/** Only branch 1 is sensed, so the table holds one IN/OUT pair. See docs/PROTOCOL.md §0. */
+const TEL_DDL = `
 CREATE TABLE IF NOT EXISTS telemetry(
   at INTEGER PRIMARY KEY,
-  m REAL, b1i REAL, b1o REAL, b2i REAL, b2o REAL, b3i REAL, b3o REAL,
-  loss1 REAL, loss2 REAL, loss3 REAL,
+  b1i REAL, b1o REAL, loss1 REAL,
   leak INTEGER, valve INTEGER, pump INTEGER,
   ntu REAL, ppm REAL, rssi INTEGER
-);
+);`;
+
+const DDL = `
+${TEL_DDL}
 CREATE TABLE IF NOT EXISTS events(
   id INTEGER PRIMARY KEY,
   at INTEGER NOT NULL,
@@ -46,9 +49,10 @@ export interface MetaSnapshot {
   lastSeen: number | null;
 }
 
-const HISTORY_COLS = ["m", "b1i", "b1o", "b2i", "b2o", "b3i", "b3o", "loss1", "loss2", "loss3", "leak", "ntu", "ppm"] as const;
+const HISTORY_COLS = ["b1i", "b1o", "loss1", "leak", "ntu", "ppm"] as const;
 type HistoryCol = (typeof HISTORY_COLS)[number];
 
+/** One bit per branch, bit 0 = branch 1. Used for the valve column. */
 function bitmask(arr: number[], predicate: (v: number) => boolean): number {
   let mask = 0;
   arr.forEach((v, i) => { if (predicate(v)) mask |= 1 << i; });
@@ -68,13 +72,27 @@ export class Db {
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
     this.db.exec(DDL);
+    this.dropStaleTelemetry();
     this.insTel = this.db.prepare(
-      `INSERT OR IGNORE INTO telemetry(at,m,b1i,b1o,b2i,b2o,b3i,b3o,loss1,loss2,loss3,leak,valve,pump,ntu,ppm,rssi)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT OR IGNORE INTO telemetry(at,b1i,b1o,loss1,leak,valve,pump,ntu,ppm,rssi)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     );
     this.insEvt = this.db.prepare("INSERT INTO events(at,kind,branch,json) VALUES (?,?,?,?)");
     this.setMeta = this.db.prepare("INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
     this.getMeta = this.db.prepare("SELECT value FROM meta WHERE key = ?");
+  }
+
+  /**
+   * A database written by an older build has the three-branch telemetry columns and would reject
+   * every insert. The rows are a rolling 24 h of demo readings, so the honest fix is to drop them;
+   * events and the last-state meta survive.
+   */
+  private dropStaleTelemetry(): void {
+    const cols = (this.db.prepare("PRAGMA table_info(telemetry)").all() as { name: string }[]).map((c) => c.name);
+    const want = ["at", "b1i", "b1o", "loss1", "leak", "valve", "pump", "ntu", "ppm", "rssi"];
+    if (want.every((c) => cols.includes(c)) && cols.length === want.length) return;
+    log("DB", `telemetry columns [${cols.join(",")}] are from an older build - recreating for the two-branch rig`);
+    this.db.exec(`DROP TABLE telemetry; ${TEL_DDL}`);
   }
 
   bufferTel(tel: Stamped<Telemetry>): void {
@@ -91,9 +109,9 @@ export class Db {
     try {
       for (const t of rows) {
         this.insTel.run(
-          t.at, t.f[0], t.f[1], t.f[2], t.f[3], t.f[4], t.f[5], t.f[6],
-          t.loss[0], t.loss[1], t.loss[2],
-          bitmask(t.leak, (v) => v >= 1), bitmask(t.v, (v) => v === 1), t.pump,
+          // `leak` is the monitored branch's level (0..3), not a mask: it is the only sensed branch.
+          t.at, t.f[0], t.f[1], t.loss[0],
+          t.leak[0] ?? 0, bitmask(t.v, (v) => v === 1), t.pump,
           t.turb.ntu, t.tds.ppm, t.rssi,
         );
       }
@@ -159,15 +177,11 @@ export class Db {
     const from = now - mins * 60_000;
     const rows = this.db.prepare(
       `SELECT (at / ?) * ? AS t,
-              avg(m) m, avg(b1i) b1i, avg(b1o) b1o, avg(b2i) b2i, avg(b2o) b2o, avg(b3i) b3i, avg(b3o) b3o,
-              avg(loss1) loss1, avg(loss2) loss2, avg(loss3) loss3,
+              avg(b1i) b1i, avg(b1o) b1o, avg(loss1) loss1,
               max(leak) leak, avg(ntu) ntu, avg(ppm) ppm
        FROM telemetry WHERE at >= ? GROUP BY t ORDER BY t`,
     ).all(step, step, from) as Record<HistoryCol | "t", number | null>[];
-    const out: HistoryResponse = {
-      step, t: [], m: [], b1i: [], b1o: [], b2i: [], b2o: [], b3i: [], b3o: [],
-      loss1: [], loss2: [], loss3: [], leak: [], ntu: [], ppm: [],
-    };
+    const out: HistoryResponse = { step, t: [], b1i: [], b1o: [], loss1: [], leak: [], ntu: [], ppm: [] };
     for (const r of rows) {
       out.t.push(Number(r.t ?? 0));
       for (const c of HISTORY_COLS) {

@@ -11,15 +11,18 @@ function Unit({ children }: { children: React.ReactNode }) {
 /** The four headline numbers, every one a field of the `tel` message. */
 export function SectionCards() {
   const tel = useRig((s) => s.tel);
-  const lost = tel ? Math.max(0, ...tel.loss) : null;
+  const monitored = useRig((s) => s.brand.branches[0]);
+  // Only branch 1 is metered, so the headline flow and loss are its numbers. See docs/PROTOCOL.md §0.
+  const lost = tel ? Math.max(0, tel.loss[0] ?? 0) : null;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Card>
         <CardHeader>
-          <CardDescription>Master flow</CardDescription>
+          <CardDescription>Water in</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums">
             {fmt2(tel?.f[0])}<Unit>L/min</Unit>
           </CardTitle>
+          <CardDescription className="text-xs">entering {monitored}</CardDescription>
         </CardHeader>
       </Card>
       <Card>
@@ -34,6 +37,7 @@ export function SectionCards() {
           <CardTitle className="text-2xl font-semibold tabular-nums">
             {lost === null ? "--" : lost.toFixed(1)}<Unit>%</Unit>
           </CardTitle>
+          <CardDescription className="text-xs">in/out difference on {monitored}</CardDescription>
         </CardHeader>
       </Card>
       <Card>

@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { WebSocket } from "ws";
+import { SENSOR_KEYS } from "@proto/types";
 import type { HistoryResponse, ServerToViewer, Stamped, StatusResponse, Telemetry, ViewerCmd } from "@proto/types";
 
 type Msg<T extends ServerToViewer["t"]> = Extract<ServerToViewer, { t: T }>;
@@ -66,24 +67,26 @@ async function main(): Promise<void> {
   step = "device online within 8 s";
   if (!state.online) await expect((m): m is Msg<"device"> => m.t === "device" && m.online, 8000, "device online");
   const tel1 = await expect((m): m is Stamped<Telemetry> => m.t === "tel", 3000, "first tel");
-  if (tel1.f.length !== 7) fail("tel.f length");
+  if (tel1.f.length !== SENSOR_KEYS.length) fail(`tel.f length ${tel1.f.length}, expected ${SENSOR_KEYS.length}`);
   console.log(`  online, tel seq=${tel1.seq}`);
 
   const sendCmd = (c: Omit<ViewerCmd, "t">): void => { ws.send(JSON.stringify({ t: "cmd", ...c } satisfies ViewerCmd)); };
   const ackFor = (cid: string): Promise<Msg<"ack">> => expect((m): m is Msg<"ack"> => m.t === "ack" && m.cid === cid, 3000, `ack ${cid}`);
 
-  step = "valve close ack";
-  sendCmd({ cid: "s1", act: "valve", b: 2, on: false });
+  // Branch 2 is the backup: it starts closed, so opening then closing it exercises both directions.
+  step = "valve open ack";
+  sendCmd({ cid: "s1", act: "valve", b: 2, on: true });
   const ack1 = await ackFor("s1");
   if (!ack1.ok) fail(`ack s1 not ok: ${ack1.err}`);
-  step = "tel reflects valve 2 closed";
-  await expect((m): m is Stamped<Telemetry> => m.t === "tel" && m.v[1] === 0, 3000, "tel with v[1]=0");
-  console.log("  valve 2 closed and reflected in tel");
+  step = "tel reflects valve 2 open";
+  await expect((m): m is Stamped<Telemetry> => m.t === "tel" && m.v[1] === 1, 3000, "tel with v[1]=1");
+  console.log("  valve 2 opened and reflected in tel");
 
-  step = "valve reopen";
-  sendCmd({ cid: "s2", act: "valve", b: 2, on: true });
+  step = "valve close";
+  sendCmd({ cid: "s2", act: "valve", b: 2, on: false });
   const ack2 = await ackFor("s2");
   if (!ack2.ok) fail(`ack s2 not ok: ${ack2.err}`);
+  await expect((m): m is Stamped<Telemetry> => m.t === "tel" && m.v[1] === 0, 3000, "tel with v[1]=0");
 
   step = "all_off";
   sendCmd({ cid: "s3", act: "all_off" });

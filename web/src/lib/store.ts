@@ -31,7 +31,7 @@ const DEFAULT_BRAND: Brand = {
   deviceName: brandingJson.deviceName,
   team: brandingJson.team,
   school: brandingJson.school,
-  branches: [brandingJson.branches[0], brandingJson.branches[1], brandingJson.branches[2]],
+  branches: [brandingJson.branches[0], brandingJson.branches[1]],
   colors: brandingJson.colors,
   showQr: brandingJson.showQr,
 };

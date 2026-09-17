@@ -37,7 +37,7 @@ export interface TwinProps {
   interactive?: boolean;
   /** Slow automatic rotation around the rig (default false). */
   autoRotate?: boolean;
-  /** DOM labels for tank / pump / master / branches (default true). */
+  /** DOM labels for the pump and the branches (default true). */
   showLabels?: boolean;
   /** Extra classes for the wrapper (which is `relative h-full w-full overflow-hidden`). */
   className?: string;
