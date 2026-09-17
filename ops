@@ -1,1 +1,1 @@
-{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":5,"timestamp":1789641236,"nonce":"aJU97OHd0qUZWyvRXeclzdsoiLE=","added":["web","tooling","P3","optional"],"removed":null}]}
+{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":2,"timestamp":1789641316,"nonce":"9sfs2TJaawKe+UvkXaWtHpZWlBo=","title":"Optional: reduce fake-device event noise on all_off","was":"Optional polish. `web/scripts/fake-device.ts` emits one `evt` per valve plus a separate `all_off`"}]}
