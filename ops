@@ -1,1 +1,1 @@
-{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":5,"timestamp":1789641235,"nonce":"kIwK6JqZlfvUbOzbzR/ZGws9AjY=","added":["web","perf","P3"],"removed":null}]}
+{"author":{"id":"08468221db090fa9af39e58d6a9b2c05540151ac002b313cdfc0777721169c7d"},"ops":[{"type":2,"timestamp":1789641315,"nonce":"lJ+KOGtR8sNtQXMhChAjlCR6qS4=","title":"Twin: measure frame rate on the fair laptop","was":"Measure the twin's frame rate on the actual laptop that will run the demo at the fair, with the"}]}
