@@ -1,6 +1,7 @@
 /**
  * Entry point: one Node process that serves the Next.js UI, the WebSocket hub on /ws,
- * the /api/* JSON routes and the SQLite history. Runs unchanged on a laptop or on Render.
+ * the /api/* JSON routes and the SQLite history, and reads the rig over USB serial when one is
+ * plugged in (SERIAL_PORT, see ./serial.ts). Runs unchanged on a laptop or on Render.
  *   dev:   pnpm dev      (tsx watch, Next in development mode)
  *   prod:  pnpm build && pnpm start
  */
@@ -11,6 +12,7 @@ import { handleApi } from "./api";
 import { computeServerUrl, loadBrand, watchBranding } from "./branding";
 import { Db } from "./db";
 import { log, logError } from "./log";
+import { startSerial } from "./serial";
 import { RigState } from "./state";
 import { Hub } from "./ws";
 
@@ -51,6 +53,7 @@ server.on("upgrade", (req, socket, head) => {
   if (!pathname.startsWith("/_next")) socket.destroy();
 });
 
+const serial = startSerial(hub);
 const brandWatcher = watchBranding((b) => hub.broadcastBrand(b));
 const flushTimer = setInterval(() => db.flush({ tel: state.tel, info: state.info, lastSeen: state.lastSeen }), 5000);
 const pruneTimer = setInterval(() => db.prune(), 10 * 60_000);
@@ -68,6 +71,7 @@ function shutdown(signal: string): void {
   clearInterval(flushTimer);
   clearInterval(pruneTimer);
   brandWatcher?.close();
+  serial.close();
   hub.close();
   db.flush({ tel: state.tel, info: state.info, lastSeen: state.lastSeen });
   db.close();

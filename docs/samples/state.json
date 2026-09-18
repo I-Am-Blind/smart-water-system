@@ -1,6 +1,6 @@
 {"t":"state","now":1725900001000,"online":true,"lastSeen":1725900000900,
  "info":{"t":"hello","proto":1,"id":"rig-7a3f21","fw":"2.0.0","ip":"192.168.0.42","rssi":-58,"rst":"POWERON","mon":[1,0],"sim":false},
- "tel":{"t":"tel","at":1725900000900,"ms":123456,"seq":120,"f":[1.21,0.58],"p":[1199870,600120],"loss":[52.1,0],"leak":[3,0],"v":[0,1],"pump":1,"turb":{"mv":2410,"ntu":14},"tds":{"mv":420,"ppm":186},"rssi":-58,"up":123,"heap":215000,"sim":false},
+ "tel":{"t":"tel","at":1725900000900,"ms":123456,"seq":120,"f":[1.21,0.58],"p":[1199870,600120],"loss":[52.1,0],"leak":[3,0],"v":[0,1],"pump":1,"auto":1,"turb":{"mv":2410,"ntu":14},"tds":{"mv":420,"ppm":186},"rssi":-58,"up":123,"heap":215000,"sim":false},
  "events":[
   {"t":"evt","at":1725900000500,"ms":123999,"ev":"valve","b":1,"on":0,"src":"leak"},
   {"t":"evt","at":1725900000000,"ms":123456,"ev":"leak","b":1,"kind":"burst","loss":62.5,"src":"leak"}

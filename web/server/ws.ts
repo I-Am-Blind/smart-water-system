@@ -1,7 +1,8 @@
 /**
- * WebSocket hub: one device socket (the rig), many viewer sockets (browsers, mobile).
- * Validates every inbound message with the shared zod schemas, forwards commands to the
- * device with integer ids, maps acks back to the caller by cid, and fans telemetry out.
+ * Hub: one device (the rig), many viewer sockets (browsers, mobile).
+ * The device arrives either as a WebSocket on /ws or over USB serial (./serial.ts); both are a
+ * DeviceLink here. Validates every inbound message with the shared zod schemas, forwards commands
+ * to the device with integer ids, maps acks back to the caller by cid, and fans telemetry out.
  */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -9,8 +10,8 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { DeviceToServerSchema, ViewerToServerSchema } from "@proto/schema";
 import {
   ACK_TIMEOUT_MS, ONLINE_TIMEOUT_MS,
-  type Brand, type CmdBody, type DeviceCmd, type DeviceMsg, type Hello, type HttpAck, type ServerAckError,
-  type Telemetry, type ViewerAck, type Welcome,
+  type Brand, type CmdBody, type DeviceCmd, type DeviceMsg, type DeviceToServer, type Hello, type HttpAck,
+  type ServerAckError, type ServerToDevice, type Telemetry, type ViewerAck, type Welcome,
 } from "@proto/types";
 import type { Db } from "./db";
 import { log, logError } from "./log";
@@ -27,6 +28,26 @@ type Origin =
 
 interface Pending { origin: Origin; timer: NodeJS.Timeout }
 
+/** The connected rig, whichever transport it arrived on. */
+export interface DeviceLink {
+  /** For logs: "ws" or the serial port path. */
+  readonly name: string;
+  readonly open: boolean;
+  send(msg: ServerToDevice): void;
+  /** Drops the link because a newer device took over. */
+  close(reason: string): void;
+}
+
+/** Parses and validates one device message (a WebSocket frame or a serial line). */
+export function parseDeviceMessage(s: string): { ok: true; msg: DeviceToServer } | { ok: false; err: string } {
+  let raw: unknown;
+  try { raw = JSON.parse(s); } catch { return { ok: false, err: "not JSON" }; }
+  const parsed = DeviceToServerSchema.safeParse(raw);
+  if (parsed.success) return { ok: true, msg: parsed.data };
+  const t = typeof raw === "object" && raw !== null && "t" in raw ? String((raw as { t: unknown }).t) : "?";
+  return { ok: false, err: `invalid ${t}: ${parsed.error.issues[0]?.path.join(".")} ${parsed.error.issues[0]?.message}` };
+}
+
 function text(data: RawData): string {
   if (typeof data === "string") return data;
   if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
@@ -37,7 +58,9 @@ function text(data: RawData): string {
 export class Hub {
   readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
   private viewers = new Set<WebSocket>();
-  private device: WebSocket | null = null;
+  private device: DeviceLink | null = null;
+  /** Sockets that connected in the device role, for the ping sweep. */
+  private deviceSockets = new Set<WebSocket>();
   private alive = new WeakMap<WebSocket, boolean>();
   private pending = new Map<number, Pending>();
   private cmdSeq = 0;
@@ -57,7 +80,7 @@ export class Hub {
   get viewerCount(): number { return this.viewers.size; }
 
   get online(): boolean {
-    return this.device !== null && this.device.readyState === WebSocket.OPEN
+    return this.device !== null && this.device.open
       && Date.now() - this.state.lastTelAt < ONLINE_TIMEOUT_MS;
   }
 
@@ -80,6 +103,7 @@ export class Hub {
   }
 
   private awaitHello(ws: WebSocket): void {
+    this.deviceSockets.add(ws);
     const timer = setTimeout(() => ws.close(4001, "hello timeout"), HELLO_TIMEOUT_MS);
     ws.once("message", (data) => {
       clearTimeout(timer);
@@ -88,52 +112,61 @@ export class Hub {
         ws.close(4001, "expected hello");
         return;
       }
-      this.adoptDevice(ws, msg);
+      const link: DeviceLink = {
+        name: "ws",
+        get open() { return ws.readyState === WebSocket.OPEN; },
+        send: (m) => this.sendJson(ws, m),
+        close: (reason) => ws.close(4000, reason),
+      };
+      this.adoptDevice(link, msg);
+      ws.on("message", (d) => {
+        const m = this.parseDevice(ws, d);
+        if (m) this.deviceMessage(link, m);
+      });
+      ws.on("close", (code) => this.dropDevice(link, `code=${code}`));
     });
-    ws.on("close", () => clearTimeout(timer));
+    ws.on("close", () => {
+      clearTimeout(timer);
+      this.deviceSockets.delete(ws);
+    });
   }
 
-  private adoptDevice(ws: WebSocket, hello: Hello): void {
-    if (this.device && this.device !== ws) {
-      log("WS", "device replaced by a new connection");
+  /** Makes `link` the device (a newer one replaces an older one). Called again on every hello. */
+  adoptDevice(link: DeviceLink, hello: Hello): void {
+    if (this.device && this.device !== link) {
+      log("DEV", `device on ${this.device.name} replaced by ${link.name}`);
       const old = this.device;
       this.device = null;
-      old.close(4000, "replaced");
+      old.close("replaced");
     }
-    this.device = ws;
+    this.device = link;
     this.state.info = hello;
-    log("WS", `device hello id=${hello.id} fw=${hello.fw} ip=${hello.ip} rst=${hello.rst} mon=[${hello.mon.join(",")}]`);
+    log("DEV", `hello via ${link.name} id=${hello.id} fw=${hello.fw} ip=${hello.ip} rst=${hello.rst} mon=[${hello.mon.join(",")}]`);
     const welcome: Welcome = { t: "welcome", now: Date.now() };
-    this.sendJson(ws, welcome);
-    ws.on("message", (data) => {
-      const msg = this.parseDevice(ws, data);
-      if (msg) this.onDeviceMessage(msg);
-    });
-    ws.on("close", (code) => {
-      if (this.device === ws) {
-        this.device = null;
-        log("WS", `device disconnected code=${code}`);
-        this.setOnline(false);
-        this.failAllPending("device_offline");
-      }
-    });
+    link.send(welcome);
+  }
+
+  /** The device's link went away (socket closed, cable pulled). No-op for a link that was already replaced. */
+  dropDevice(link: DeviceLink, why: string): void {
+    if (this.device !== link) return;
+    this.device = null;
+    log("DEV", `device on ${link.name} disconnected ${why}`);
+    this.setOnline(false);
+    this.failAllPending("device_offline");
   }
 
   // ---------- inbound ----------
 
-  private parseDevice(ws: WebSocket, data: RawData) {
-    let raw: unknown;
-    try { raw = JSON.parse(text(data)); } catch { this.reject(ws, "device", "not JSON"); return null; }
-    const parsed = DeviceToServerSchema.safeParse(raw);
-    if (!parsed.success) {
-      const t = typeof raw === "object" && raw !== null && "t" in raw ? String((raw as { t: unknown }).t) : "?";
-      this.reject(ws, "device", `invalid ${t}: ${parsed.error.issues[0]?.path.join(".")} ${parsed.error.issues[0]?.message}`);
-      return null;
-    }
-    return parsed.data;
+  private parseDevice(ws: WebSocket, data: RawData): DeviceToServer | null {
+    const r = parseDeviceMessage(text(data));
+    if (r.ok) return r.msg;
+    this.reject(ws, "device", r.err);
+    return null;
   }
 
-  private onDeviceMessage(msg: ReturnType<typeof DeviceToServerSchema.parse>): void {
+  /** Handles a validated message from `link`; ignored unless `link` is the current device. */
+  deviceMessage(link: DeviceLink, msg: DeviceToServer): void {
+    if (this.device !== link) return;
     const at = Date.now();
     switch (msg.t) {
       case "tel": {
@@ -207,7 +240,7 @@ export class Hub {
     this.pending.set(id, { origin, timer });
     const out: DeviceCmd = { t: "cmd", id, ...cmd };
     log("CMD", `#${id} ${JSON.stringify(cmd)}`);
-    this.sendJson(this.device, out);
+    this.device.send(out);
   }
 
   private deliverAck(origin: Origin, ack: HttpAck): void {
@@ -231,7 +264,7 @@ export class Hub {
   private setOnline(online: boolean): void {
     if (this.state.online === online) return;
     this.state.online = online;
-    log("WS", online ? "device ONLINE" : "device OFFLINE");
+    log("DEV", online ? "device ONLINE" : "device OFFLINE");
     const msg: DeviceMsg = { t: "device", online, lastSeen: this.state.lastSeen, info: this.state.info };
     this.broadcast(msg, false);
     if (!online) this.db.flush({ tel: this.state.tel, info: this.state.info, lastSeen: this.state.lastSeen });
@@ -242,7 +275,7 @@ export class Hub {
   }
 
   private pingAll(): void {
-    const all = [...this.viewers, ...(this.device ? [this.device] : [])];
+    const all = [...this.viewers, ...this.deviceSockets];
     for (const ws of all) {
       if (ws.readyState !== WebSocket.OPEN) continue;
       if (this.alive.get(ws) === false) { ws.terminate(); continue; }
@@ -277,7 +310,7 @@ export class Hub {
     for (const t of this.timers) clearInterval(t);
     this.failAllPending("device_offline");
     for (const ws of this.viewers) ws.close(1001, "server shutdown");
-    this.device?.close(1001, "server shutdown");
+    for (const ws of this.deviceSockets) ws.close(1001, "server shutdown");
     this.wss.close();
   }
 }

@@ -60,7 +60,7 @@ export function describeEvent(e: RigEvent, branches: Brand["branches"]): string 
   const why = e.reason ? `, ${REASON[e.reason] ?? e.reason}` : "";
   switch (e.ev) {
     case "leak":
-      return `${name}: ${e.kind ?? "leak"} leak, ${e.loss?.toFixed(1) ?? "?"}% loss. Valve closed.`;
+      return `${name}: ${e.kind ?? "leak"} leak, ${e.loss?.toFixed(1) ?? "?"}% loss.`;
     case "leak_clear":
       return `Leak latches reset (${src}).`;
     case "valve":
@@ -69,6 +69,8 @@ export function describeEvent(e: RigEvent, branches: Brand["branches"]): string 
       return `Pump ${e.on ? "started" : "stopped"} (${src}${why}).`;
     case "all_off":
       return `All relays off (${src}).`;
+    case "mode":
+      return `${e.on ? "Automatic" : "Manual"} valve control (${src}).`;
     case "boot":
       return "Device booted.";
     default:
@@ -101,11 +103,13 @@ export function describeError(err: string, cmd: CmdBody | undefined, branches: B
       case "pump": return cmd.on ? "Couldn't start the pump" : "Couldn't stop the pump";
       case "all_off": return "Couldn't switch everything off";
       case "reset_leak": return "Couldn't clear the leak";
+      case "auto": return cmd.on ? "Couldn't switch to automatic mode" : "Couldn't switch to manual mode";
       default: return "Couldn't send the command";
     }
   })();
   const why: Record<string, string> = {
     latched: "the leak is still latched. Clear the leak first.",
+    auto_mode: "the rig is in automatic mode. Switch to manual first.",
     bad_branch: "the rig does not know that branch.",
     no_open_valve: "open a valve before starting the pump.",
     unknown_act: "the rig does not know this command.",

@@ -56,14 +56,22 @@ export function watchBranding(onChange: (brand: Brand) => void): FSWatcher | nul
   }
 }
 
-/** First non-internal IPv4 address of this machine, or localhost. */
+/** Adapters phones cannot reach (VMs, WSL, VPNs); Windows laptops often have several. */
+const VIRTUAL_NIC = /vethernet|virtualbox|vbox|vmware|wsl|hyper-v|docker|bridge|utun|tailscale|zerotier|npcap/i;
+const PRIVATE_V4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
+/** LAN_IP if set (the launcher sets it), else this machine's Wi-Fi/Ethernet IPv4 address, or localhost. */
 export function lanAddress(): string {
-  for (const list of Object.values(os.networkInterfaces())) {
+  if (process.env.LAN_IP) return process.env.LAN_IP;
+  let fallback = "";
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
     for (const ni of list ?? []) {
-      if (ni.family === "IPv4" && !ni.internal) return ni.address;
+      if (ni.family !== "IPv4" || ni.internal) continue;
+      if (!VIRTUAL_NIC.test(name) && PRIVATE_V4.test(ni.address)) return ni.address;
+      fallback ||= ni.address;
     }
   }
-  return "localhost";
+  return fallback || "localhost";
 }
 
 export function computeServerUrl(port: number): string {

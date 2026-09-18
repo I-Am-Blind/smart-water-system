@@ -50,6 +50,7 @@ export const TelemetrySchema = z.object({
   leak: z.array(leakLevel).length(2),
   v: z.array(onOff).length(2),
   pump: onOff,
+  auto: onOff,
   turb: z.object({ mv: z.number(), ntu: z.number() }),
   tds: z.object({ mv: z.number(), ppm: z.number() }),
   rssi: z.number(),
@@ -61,7 +62,7 @@ export const TelemetrySchema = z.object({
 export const RigEventSchema = z.object({
   t: z.literal("evt"),
   ms: z.number().int().nonnegative(),
-  ev: z.enum(["boot", "leak", "leak_clear", "valve", "pump", "all_off"]),
+  ev: z.enum(["boot", "leak", "leak_clear", "valve", "pump", "all_off", "mode"]),
   b: branch.optional(),
   kind: z.enum(["drip", "burst"]).optional(),
   loss: z.number().optional(),
@@ -74,12 +75,14 @@ export const DeviceAckSchema = z.object({
   t: z.literal("ack"),
   id: z.number().int().nonnegative(),
   ok: z.boolean(),
-  err: z.enum(["latched", "bad_branch", "no_open_valve", "unknown_act", "bad_json"]).optional(),
+  err: z.enum(["latched", "bad_branch", "no_open_valve", "unknown_act", "bad_json", "auto_mode"]).optional(),
   ms: z.number().optional(),
 });
 
+const cmdAct = z.enum(["valve", "pump", "all_off", "reset_leak", "ping", "auto"]);
+
 export const CmdBodySchema = z.object({
-  act: z.enum(["valve", "pump", "all_off", "reset_leak", "ping"]),
+  act: cmdAct,
   b: branch.optional(),
   on: z.boolean().optional(),
   dur: z.number().int().min(0).max(600).optional(),
@@ -88,7 +91,7 @@ export const CmdBodySchema = z.object({
 export const ViewerCmdSchema = z.object({
   t: z.literal("cmd"),
   cid: z.string().min(1).max(64),
-  act: z.enum(["valve", "pump", "all_off", "reset_leak", "ping"]),
+  act: cmdAct,
   b: branch.optional(),
   on: z.boolean().optional(),
   dur: z.number().int().min(0).max(600).optional(),

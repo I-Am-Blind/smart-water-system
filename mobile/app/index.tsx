@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { DEFAULT_MON, DEFAULT_WS_URL, isMonitored, PUMP_UI_DUR_S, type Branch, type LeakLevel } from "../../packages/protocol/types";
+import { DEFAULT_MON, isMonitored, PUMP_UI_DUR_S, type Branch, type LeakLevel } from "../../packages/protocol/types";
 import { ago, describeError, fmtLpm, LEAK_BADGE, since } from "../lib/format";
 import { clearError, sendCmd, useRig } from "../lib/store";
 import { Badge, Btn, Card, Hairline, Row, Tile, useColors } from "../lib/ui";
@@ -86,14 +86,14 @@ function Tiles() {
   const p = useColors();
   const name1 = useRig((s) => s.brand.branches[0]);
   const inflow = useRig((s) => s.tel?.f[0] ?? 0);
-  const pump = useRig((s) => s.tel?.pump === 1);
+  const auto = useRig((s) => s.tel?.auto === 1);
   const lost = useRig((s) => s.tel?.loss[0] ?? 0);
   const ntu = useRig((s) => s.tel?.turb.ntu ?? 0);
   const ppm = useRig((s) => s.tel?.tds.ppm ?? 0);
   return (
     <View style={styles.grid}>
       <Tile label="Water in" value={fmtLpm(inflow)} unit="L/min" note={`entering ${name1}`} color={inflow > 0 ? p.accent : undefined} />
-      <Tile label="Pump" value={pump ? "Running" : "Off"} />
+      <Tile label="Valve control" value={auto ? "Automatic" : "Manual"} note={auto ? "the rig switches branches on a leak" : "leaks are shown, you switch the valves"} />
       <Tile label="Water lost" value={lost.toFixed(1)} unit="%" note={`in/out difference on ${name1}`} />
       <Tile label="Turbidity / TDS" value={`${ntu}`} unit={`NTU, ${ppm} ppm`} note="clear water is under 5 NTU, drinking water is usually under 500 ppm" />
     </View>
@@ -110,14 +110,14 @@ function BranchRow({ b, last }: { b: Branch; last: boolean }) {
   const loss = useRig((s) => s.tel?.loss[b - 1] ?? 0);
   const leak = useRig((s) => (s.tel?.leak[b - 1] ?? 0) as LeakLevel);
   const open = useRig((s) => s.tel?.v[b - 1] === 1);
+  const auto = useRig((s) => s.tel?.auto === 1);
   const online = useRig((s) => s.conn === "open" && s.online);
   const busy = useRig((s) => Object.values(s.pending).some((c) => c.act === "valve" && c.b === b));
   const latched = leak >= 2;
-  const disabled = !online || busy || latched;
-  const hint = !online ? "Rig offline" : latched ? "Clear the leak first" : null;
-  const lossText = latched
-    ? "closed by leak protection"
-    : !open ? "valve closed"
+  const disabled = !online || busy || auto;
+  const hint = !online ? "Rig offline" : auto ? "Automatic mode: switch to manual to control the valves" : null;
+  const lossText = !open
+    ? latched && auto ? "closed by leak protection" : "valve closed"
     : sensed ? `loss ${loss.toFixed(1)} %`
     : "valve open";
   return (
@@ -160,6 +160,42 @@ function BranchRow({ b, last }: { b: Branch; last: boolean }) {
   );
 }
 
+/** Automatic: the rig drives the valves. Manual: leaks are still reported, the operator drives them. */
+function ModeRow() {
+  const p = useColors();
+  const auto = useRig((s) => s.tel?.auto === 1);
+  const name1 = useRig((s) => s.brand.branches[0]);
+  const name2 = useRig((s) => s.brand.branches[1]);
+  const online = useRig((s) => s.conn === "open" && s.online);
+  const busy = useRig((s) => Object.values(s.pending).some((c) => c.act === "auto" || c.act === "all_off"));
+  return (
+    <View style={styles.branchRow}>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={{ color: p.text, fontSize: 14, fontWeight: "500" }}>Automatic mode</Text>
+        <Text style={{ color: p.muted, fontSize: 13 }}>
+          {auto
+            ? `${name1} stays open, and ${name2} takes over if it leaks.`
+            : "Leaks are still detected and shown. You open and close the valves."}
+        </Text>
+      </View>
+      <View style={{ alignItems: "center", gap: 4 }}>
+        {busy ? <ActivityIndicator size="small" color={p.muted} /> : null}
+        <Switch
+          value={auto}
+          disabled={!online || busy}
+          accessibilityLabel={auto ? "Switch to manual mode" : "Switch to automatic mode"}
+          onValueChange={(v) => {
+            sendCmd({ act: "auto", on: v });
+          }}
+          trackColor={{ true: p.accent, false: p.card2 }}
+          thumbColor={p.text}
+          ios_backgroundColor={p.card2}
+        />
+      </View>
+    </View>
+  );
+}
+
 function Branches() {
   const p = useColors();
   const pump = useRig((s) => s.tel?.pump === 1);
@@ -180,6 +216,8 @@ function Branches() {
 
   return (
     <Card title="Branches" flush>
+      <Hairline />
+      <ModeRow />
       <Hairline />
       <BranchRow b={1} last={false} />
       <BranchRow b={2} last />
@@ -213,7 +251,7 @@ export default function Dashboard() {
       ) : (
         <Card>
           <Text style={{ color: p.muted, fontSize: 14, lineHeight: 20 }}>
-            Waiting for the rig to connect. Point its firmware at {DEFAULT_WS_URL}.
+            Waiting for the rig. Plug the Arduino into the laptop that runs the server.
           </Text>
         </Card>
       )}

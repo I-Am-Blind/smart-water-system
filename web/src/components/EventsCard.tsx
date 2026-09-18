@@ -26,7 +26,7 @@ function describe(e: Stamped<RigEvent>, names: readonly string[]): string {
   const because = e.reason ? ` (${BECAUSE[e.reason]})` : "";
   switch (e.ev) {
     case "leak":
-      return `${e.kind === "burst" ? "Burst" : "Drip leak"} on ${where}, ${e.loss?.toFixed(0) ?? "?"} % lost. Valve closed.`;
+      return `${e.kind === "burst" ? "Burst" : "Drip leak"} on ${where}, ${e.loss?.toFixed(0) ?? "?"} % lost.`;
     case "leak_clear":
       return `Leak alarm cleared ${by}.`;
     case "valve":
@@ -35,6 +35,8 @@ function describe(e: Stamped<RigEvent>, names: readonly string[]): string {
       return `Pump ${e.on ? "started" : "stopped"} ${by}${because}.`;
     case "all_off":
       return `Everything switched off ${by}.`;
+    case "mode":
+      return `Switched to ${e.on ? "automatic" : "manual"} valve control ${by}.`;
     case "boot":
       return "Rig started.";
     default:

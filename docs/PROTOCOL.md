@@ -1,6 +1,6 @@
 # Wire protocol v1
 
-Single source of truth for how the ESP32 rig, the server, the web UI and the mobile app talk.
+Single source of truth for how the rig (an Arduino Uno on USB), the server, the web UI and the mobile app talk.
 Machine-readable twins: `packages/protocol/types.ts` (types, constants), `packages/protocol/schema.ts` (zod validators, server only), `docs/samples/*.json` (golden messages used by tests).
 Owned by the orchestrator. If an implementation needs a change, report it; do not change field names locally.
 
@@ -17,10 +17,13 @@ Two lanes, one working IN/OUT flow pair, no master sensor.
 
 A branch with no flow sensing reports `loss` and `leak` as `0`. **Those zeros are not measurements** — viewers must render them as "no data" (a dash), and `hello.mon` says which branches are sensed. There is no manifold/master check: the sensor it needed does not exist on this rig.
 
+The rig runs `firmware/uno_usb_rig/` on an Arduino Uno plugged into the laptop by USB. The Uno has no pump relay: `pump` is always `0` and `act:"pump"` is refused with `unknown_act`. The ESP32 firmware (`firmware/rig_firmware/`) predates `auto` and no longer passes the server's validation.
+
 ## 1. Transport
 
 | | |
 |---|---|
+| USB serial (the Uno) | Same device messages at 115200 baud, one JSON message per line (`\n`). The server finds the board itself (`SERIAL_PORT=auto`; or a path such as `COM3` / `/dev/cu.usbmodem1101`; or `off`), reopens it after an unplug or 10 s of silence, and treats it exactly like a device socket. A line holding only `?` asks the board for `hello` again (for when opening the port did not reset it). The server does not send `welcome` over serial and spaces its lines ≥ 60 ms apart, because the Uno's receive buffer is 64 bytes. Lines from the board that are not JSON are logged, not parsed. |
 | Endpoint | WebSocket, path `/ws` on the server (laptop: `ws://<laptop-ip>:3000/ws` or `ws://<laptop-name>.local:3000/ws`; cloud: `wss://<host>/ws`) |
 | Framing | JSON text, exactly one message per frame, max 64 KB. Every message has a string `t` discriminator. Unknown `t` is ignored, never an error. |
 | Device role | The ESP32 (or `scripts/fake-device.ts`) connects with no query string and MUST send `hello` within 5 s, else the server closes with code 4001. If a second device connects, the older socket is closed with 4000 "replaced". |
@@ -49,7 +52,7 @@ Both ends must be on the same network with client isolation **off**. The firmwar
 ```json
 {"t":"tel","ms":123456,"seq":120,
  "f":[1.21,0.58],"p":[1199870,600120],
- "loss":[52.1,0],"leak":[3,0],"v":[0,1],"pump":1,
+ "loss":[52.1,0],"leak":[3,0],"v":[0,1],"pump":1,"auto":1,
  "turb":{"mv":2410,"ntu":14},"tds":{"mv":420,"ppm":186},
  "rssi":-58,"up":123,"heap":215000,"sim":false}
 ```
@@ -60,9 +63,10 @@ Both ends must be on the same network with client isolation **off**. The firmwar
 | `f` | number[2] | L/min, 2 dp |
 | `p` | uint32[2] | cumulative raw pulses (uncalibrated) |
 | `loss` | number[2] | `(in-out)/in*100` over the 3 s window, 1 dp; `0` when the check is gated (valve closed, settling, IN < 0.5 L/min) and always `0` for an unsensed branch |
-| `leak` | int[2] | 0 ok, 1 warn, 2 drip (latched, valve closed), 3 burst (latched, valve closed); always 0 for an unsensed branch |
+| `leak` | int[2] | 0 ok, 1 warn, 2 drip (latched), 3 burst (latched); in automatic mode a latch also closes the branch's valve; always 0 for an unsensed branch |
 | `v` | 0/1[2] | valve relay state, 1 = open (relay energised) |
 | `pump` | 0/1 | pump relay state |
+| `auto` | 0/1 | 1 = automatic mode (the rig drives the valves), 0 = manual (leaks are still detected and reported; the operator drives the valves). See §7 |
 | `turb.mv`, `turb.ntu` | int | millivolts at the ADC pin; NTU estimate 0..3000 |
 | `tds.mv`, `tds.ppm` | int | millivolts at the ADC pin; ppm at 25 C |
 | `rssi` | int | dBm |
@@ -78,16 +82,17 @@ Both ends must be on the same network with client isolation **off**. The firmwar
 {"t":"evt","ms":130000,"ev":"pump","on":0,"src":"wd","reason":"max_on"}
 {"t":"evt","ms":150000,"ev":"leak_clear","src":"serial"}
 {"t":"evt","ms":160000,"ev":"all_off","src":"ws"}
+{"t":"evt","ms":170000,"ev":"mode","on":0,"src":"ws"}
 {"t":"evt","ms":40,"ev":"boot","src":"boot"}
 ```
-`ev` ∈ `boot | leak | leak_clear | valve | pump | all_off`. `src` ∈ `serial | ws | leak | wd | interlock | boot` (who caused it). `reason` ∈ `max_on | all_closed | failover` (why the watchdog/interlock/leak logic acted). `kind` ∈ `drip | burst`. `on` is the NEW state for valve / pump.
+`ev` ∈ `boot | leak | leak_clear | valve | pump | all_off | mode`. `src` ∈ `serial | ws | leak | wd | interlock | boot` (who caused it). `reason` ∈ `max_on | all_closed | failover` (why the watchdog/interlock/leak logic acted). `kind` ∈ `drip | burst`. `on` is the NEW state for valve / pump; for `mode`, 1 = automatic and 0 = manual.
 
 ### ack (reply to every cmd, within 3 s)
 ```json
 {"t":"ack","id":17,"ok":true,"ms":123500}
 {"t":"ack","id":17,"ok":false,"err":"latched"}
 ```
-`err` ∈ `latched` (branch leak latched, valve on refused until reset_leak) | `bad_branch` | `no_open_valve` (pump refused, all valves closed) | `unknown_act` | `bad_json`. Every successful ack carries the device `ms`.
+`err` ∈ `auto_mode` (valve command while in automatic mode) | `latched` (branch leak latched, valve on refused until reset_leak; ESP32 only) | `bad_branch` | `no_open_valve` (pump refused, all valves closed) | `unknown_act` | `bad_json`. Every successful ack carries the device `ms`.
 
 ## 3. Server → device
 
@@ -98,8 +103,9 @@ Both ends must be on the same network with client isolation **off**. The firmwar
 {"t":"cmd","id":19,"act":"all_off"}
 {"t":"cmd","id":20,"act":"reset_leak"}
 {"t":"cmd","id":21,"act":"ping"}
+{"t":"cmd","id":22,"act":"auto","on":false}
 ```
-`id` uint32 assigned by the server, echoed in the ack. `act` ∈ `valve | pump | all_off | reset_leak | ping`. `b` required for valve (1 or 2). `dur` seconds the relay may stay on; absent/0 = firmware default (valve 600 s cap, pump 20 s default / 300 s cap).
+`id` uint32 assigned by the server, echoed in the ack. `act` ∈ `valve | pump | all_off | reset_leak | ping | auto`. For `auto`, `on:true` = automatic mode, `on:false` = manual. `b` required for valve (1 or 2). `dur` seconds the relay may stay on; absent/0 = firmware default (valve 600 s cap, pump 20 s default / 300 s cap).
 
 ### welcome (once after hello; device may ignore)
 ```json
@@ -168,12 +174,13 @@ The firmware serves no HTTP of its own: the serial console is the local fallback
 
 ## 7. Rules
 
-1. Boot never energises a relay. `all_off` = pump off + all valves closed, from any source, always accepted.
-2. Pump: refuses to start when all valves are closed (`no_open_valve`); stops automatically when the last open valve closes (`interlock`/`all_closed`); default on-time 20 s, `dur` up to 300 s.
+1. The Uno boots in automatic mode with branch 1's valve open (the ESP32 booted with every relay off). `all_off` = manual mode + pump off + all valves closed, from any source, always accepted.
+2. (ESP32 only; the Uno has no pump relay and no valve time cap.) Pump: refuses to start when all valves are closed (`no_open_valve`); stops automatically when the last open valve closes (`interlock`/`all_closed`); default on-time 20 s, `dur` up to 300 s.
 3. Valves: stay open until closed; hard cap 600 s (`wd`/`max_on`).
-4. Leak latched (level 2/3) on the monitored branch: the device closes that branch's valve (`src:"leak"`), then after a 300 ms break-before-make pause opens the backup branch (`evt valve b:2 on:1 reason:"failover"`) so water keeps moving. `valve on` for the latched branch is refused with `latched` until `reset_leak`. `reset_leak` clears latches only; it does not reopen or close anything.
+4. Leak latched (level 2/3) on the monitored branch: in automatic mode the device closes that branch's valve (`src:"leak"`), then after a 300 ms break-before-make pause opens the backup branch (`evt valve b:2 on:1 reason:"failover"`) so water keeps moving. In manual mode it only reports the leak. `reset_leak` clears latches; in automatic mode the device then goes back to branch 1.
 5. The device keeps detecting leaks and enforcing all of the above with no Wi-Fi and no server.
 6. Telemetry is 1 Hz. The server tolerates 0.5–2 Hz. Only the latest snapshot is ever sent; nothing is queued while offline.
+7. Modes. **Automatic** (boot default): branch 1 open, failover on a leak, `valve` commands refused with `auto_mode`; switching to automatic applies this at once (branch 2 while a leak is latched, else branch 1). **Manual**: leaks are detected and reported, nothing switches on its own, `valve` commands are obeyed. On the Uno only one valve is open at a time: opening one closes the other first, with the same 300 ms pause.
 
 ## 8. Web store API (web/src/lib/store.ts; the dashboard and the 3D twin both build on this)
 

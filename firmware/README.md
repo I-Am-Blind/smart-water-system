@@ -1,12 +1,33 @@
 # Firmware
 
-Three sketches live here:
-
 | Folder | Board | Purpose |
 |---|---|---|
+| `uno_usb_rig/` | Arduino Uno | **What the rig runs now.** Leak detection, automatic/manual valve control, the protocol over USB to the laptop. See "Arduino Uno (current)" below. |
 | `rig_diagnostic_v1/` | ESP32-S3 | Single-file bring-up test. Checks wiring, PSRAM, ADC, Wi-Fi radio; lets you click relays by hand. Run it first on a new board or after rewiring. See `docs/FLASHING.md`. |
 | `verified_full_test/` | Arduino Uno | The bench sketch that proved the plumbing works: 4 flow sensors, 2 relays, the 300 ms failover. Kept as a reference for the behaviour the production firmware copies. |
-| `rig_firmware/` | ESP32-S3 | Production firmware — one file. Leak detection, relay safety, WebSocket telemetry. This document. |
+| `rig_firmware/` | ESP32-S3 | Retired Wi-Fi firmware — one file. Leak detection, relay safety, WebSocket telemetry. Sections 0–2 below. It predates automatic/manual mode, so the current server rejects its telemetry. |
+
+## Arduino Uno (current)
+
+`uno_usb_rig/uno_usb_rig.ino`, one file, no libraries. Arduino IDE: Board **Arduino Uno**, then Upload.
+Close the Serial Monitor afterwards: the laptop server needs the port.
+
+| Pin | Use |
+|---|---|
+| D5 | Flow IN (bench label F4) |
+| D4 | Flow OUT (bench label F3) |
+| D9 | Valve 1, monitored/normal path (relay, active low) |
+| D8 | Valve 2, backup/alternate path (relay, active low) |
+| A0 / A1 | Turbidity / TDS |
+
+D4 and D5 are counted with pin-change interrupts (only D2/D3 support `attachInterrupt` on an Uno).
+IN and OUT were assigned from the bench leak log (IN rose, OUT fell); swap the two pin constants if
+the dashboard shows them the other way round. The leak rule is the bench sketch's: IN and OUT differ
+by 30 pulses or more over 3 s. It boots in automatic mode with valve 1 open.
+
+Bench test without the server: open the Serial Monitor (115200, newline) and watch one `tel` line per
+second. Type `?` for `hello`, or a command such as `{"t":"cmd","id":1,"act":"auto","on":false}` then
+`{"t":"cmd","id":2,"act":"valve","b":2,"on":true}`.
 
 ## 0. What the rig actually is
 

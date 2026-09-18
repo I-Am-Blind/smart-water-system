@@ -7,21 +7,40 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { sendCmd, useRig } from "@/lib/store";
 import { fmt2 } from "@/components/status";
 
 const PUMP_MIN = PUMP_UI_DUR_S / 60;
 
-function ValveSwitch({ b, open, latched }: { b: Branch; open: boolean; latched: boolean }) {
+/** Automatic: the rig drives the valves. Manual: leaks are still reported, the operator drives them. */
+function ModeControl() {
+  const online = useRig((s) => s.online);
+  const auto = useRig((s) => (s.tel ? s.tel.auto === 1 : null));
+  const pending = useRig((s) => Object.values(s.pending).some((c) => c.act === "auto" || c.act === "all_off"));
+  if (auto === null) return null;
+  const disabled = !online || pending;
+  // Controlled by the rig's own report: the selection moves once the rig confirms the switch.
+  return (
+    <Tabs value={auto ? "auto" : "manual"} onValueChange={(v) => sendCmd({ act: "auto", on: v === "auto" })}>
+      <TabsList aria-label="Valve control mode">
+        <TabsTrigger value="auto" disabled={disabled}>Automatic</TabsTrigger>
+        <TabsTrigger value="manual" disabled={disabled}>Manual</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function ValveSwitch({ b, open, auto }: { b: Branch; open: boolean; auto: boolean }) {
   const name = useRig((s) => s.brand.branches[b - 1]);
   const online = useRig((s) => s.online);
   const pending = useRig((s) => Object.values(s.pending).some((c) => c.act === "valve" && c.b === b));
-  const disabled = !online || pending || (latched && !open);
-  const hint = !online ? "The rig is offline" : pending ? "Waiting for the rig" : latched && !open ? "Clear the leak first" : open ? "Close valve" : "Open valve";
+  const disabled = !online || pending || auto;
+  const hint = !online ? "The rig is offline" : pending ? "Waiting for the rig" : auto ? "Switch to Manual to control the valves" : open ? "Close valve" : "Open valve";
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex" />}>
@@ -51,11 +70,12 @@ function BranchRow({ b, tel, mon }: { b: Branch; tel: Telemetry | null; mon: rea
   const name = useRig((s) => s.brand.branches[b - 1]);
   const level = tel?.leak[b - 1] ?? 0;
   const open = tel?.v[b - 1] === 1;
+  const auto = tel?.auto === 1;
   const latched = level >= 2;
   const flow = tel ? branchFlow(tel, b, mon) : null;
   const sensed = !tel || branchFlow(tel, b, mon) !== null;
   const loss = tel?.loss[b - 1] ?? 0;
-  const lossCell = !sensed ? <NoMeter /> : !tel ? "--" : latched || !open ? <span className="text-muted-foreground">closed</span> : `${loss.toFixed(1)} %`;
+  const lossCell = !sensed ? <NoMeter /> : !tel ? "--" : !open ? <span className="text-muted-foreground">closed</span> : `${loss.toFixed(1)} %`;
   return (
     <TableRow>
       <TableCell className="font-medium">{name}</TableCell>
@@ -67,13 +87,15 @@ function BranchRow({ b, tel, mon }: { b: Branch; tel: Telemetry | null; mon: rea
         {latched && (
           <Tooltip>
             <TooltipTrigger render={<Badge variant="destructive" />}>Leak</TooltipTrigger>
-            <TooltipContent>Valve closed by leak protection. Press Clear leak to reset.</TooltipContent>
+            <TooltipContent>
+              {auto ? "Valve closed by leak protection. Press Clear leak to reset." : "Leak detected. In Manual mode no valve is switched for you."}
+            </TooltipContent>
           </Tooltip>
         )}
         {!sensed && <span className="text-xs text-muted-foreground">Backup</span>}
       </TableCell>
       <TableCell className="text-right">
-        <ValveSwitch b={b} open={open} latched={latched} />
+        <ValveSwitch b={b} open={open} auto={auto} />
       </TableCell>
     </TableRow>
   );
@@ -128,6 +150,8 @@ function PumpButton() {
 
 function ClearLeakButton() {
   const online = useRig((s) => s.online);
+  const auto = useRig((s) => s.tel?.auto === 1);
+  const monitored = useRig((s) => s.brand.branches[0]);
   const latched = useRig((s) => (s.tel ? s.tel.leak.some((l) => l >= 2) : false));
   const pending = useRig((s) => Object.values(s.pending).some((c) => c.act === "reset_leak"));
   if (!latched) return null;
@@ -140,7 +164,9 @@ function ClearLeakButton() {
           </Button>
         }
       />
-      <TooltipContent>Clears the leak alarm. Valves stay closed until you open them.</TooltipContent>
+      <TooltipContent>
+        {auto ? `Clears the leak alarm and reopens ${monitored}.` : "Clears the leak alarm. The valves stay as they are."}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -150,13 +176,20 @@ export function BranchesCard({ className = "" }: { className?: string }) {
   const tel = useRig((s) => s.tel);
   const mon = useRig((s) => s.info?.mon);
   const names = useRig((s) => s.brand.branches);
+  const manual = tel?.auto === 0;
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle>Branches</CardTitle>
         <CardDescription>
-          Litres per minute in and out of {names[0]}. {names[1]} has a valve only, and opens by itself if {names[0]} leaks.
+          Litres per minute in and out of {names[0]}.{" "}
+          {manual
+            ? "Manual: leaks are still detected and shown, and you open and close the valves."
+            : `Automatic: ${names[0]} stays open, and ${names[1]} takes over if it leaks.`}
         </CardDescription>
+        <CardAction>
+          <ModeControl />
+        </CardAction>
       </CardHeader>
       <CardContent className="px-0">
         <Table>

@@ -96,6 +96,11 @@ export interface Telemetry {
   /** Valve relay states, 1 = valve open (relay energised). */
   v: OnOff[];
   pump: OnOff;
+  /**
+   * 1 = automatic: the rig keeps branch 1 open and fails over to branch 2 on a leak; valve commands
+   * are refused. 0 = manual: leaks are still detected and reported, the operator drives the valves.
+   */
+  auto: OnOff;
   /** Turbidity: millivolts at the ADC pin and an NTU estimate (0..3000). */
   turb: { mv: number; ntu: number };
   /** TDS: millivolts at the ADC pin and ppm (25 C assumed). */
@@ -108,7 +113,7 @@ export interface Telemetry {
   sim: boolean;
 }
 
-export type EventKind = "boot" | "leak" | "leak_clear" | "valve" | "pump" | "all_off";
+export type EventKind = "boot" | "leak" | "leak_clear" | "valve" | "pump" | "all_off" | "mode";
 export type EventSource = "serial" | "ws" | "leak" | "wd" | "interlock" | "boot";
 export type EventReason = "max_on" | "all_closed" | "failover";
 export type LeakKind = "drip" | "burst";
@@ -121,13 +126,14 @@ export interface RigEvent {
   kind?: LeakKind;
   /** Loss % at the moment of the event (leak). */
   loss?: number;
-  /** New state for valve / pump events. */
+  /** New state for valve / pump events; for `mode`, 1 = automatic and 0 = manual. */
   on?: OnOff;
   src: EventSource;
   reason?: EventReason;
 }
 
-export type DeviceAckError = "latched" | "bad_branch" | "no_open_valve" | "unknown_act" | "bad_json";
+/** `auto_mode`: a valve command arrived while the rig is in automatic mode. */
+export type DeviceAckError = "latched" | "bad_branch" | "no_open_valve" | "unknown_act" | "bad_json" | "auto_mode";
 
 export interface DeviceAck {
   t: "ack";
@@ -139,13 +145,13 @@ export interface DeviceAck {
 }
 
 // ---------- commands ----------
-export type CmdAct = "valve" | "pump" | "all_off" | "reset_leak" | "ping";
+export type CmdAct = "valve" | "pump" | "all_off" | "reset_leak" | "ping" | "auto";
 
 export interface CmdBody {
   act: CmdAct;
   /** Required for valve. */
   b?: Branch;
-  /** valve / pump: desired state. */
+  /** valve / pump: desired state. auto: true = automatic mode, false = manual. */
   on?: boolean;
   /** Seconds the relay may stay on (valve <= 600, pump <= 300; 0/absent = firmware default). */
   dur?: number;

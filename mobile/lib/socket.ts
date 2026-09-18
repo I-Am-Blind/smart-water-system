@@ -1,9 +1,11 @@
 /**
  * One WebSocket to the server as a viewer (`?role=viewer`), with reconnect/backoff.
- * The URL is persisted with AsyncStorage (Settings screen).
+ * The URL is persisted with AsyncStorage (Settings screen). Until one is saved, the app assumes the
+ * rig server runs on the laptop Expo Go loaded it from, which is how the Windows launcher sets it up.
  */
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { DEFAULT_WS_URL, VIEWER_QUERY } from "../../packages/protocol/types";
 import type { ServerToViewer } from "../../packages/protocol/types";
 import { applyMessage, clearPending, registerTransport, setConn } from "./store";
@@ -11,7 +13,13 @@ import { applyMessage, clearPending, registerTransport, setConn } from "./store"
 const STORAGE_KEY = "cascade.serverUrl";
 const MAX_BACKOFF_MS = 10_000;
 
-let url = DEFAULT_WS_URL;
+/** ws://<the laptop serving this app>:3000/ws, or the protocol default when not loaded from a dev server. */
+function laptopUrl(): string {
+  const host = Constants.expoConfig?.hostUri?.split(":")[0];
+  return host ? `ws://${host}:3000/ws` : DEFAULT_WS_URL;
+}
+
+let url = laptopUrl();
 let ws: WebSocket | null = null;
 let attempt = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -20,7 +28,7 @@ let started = false;
 /** Accepts "192.168.0.3:3000", "http://host:3000", "ws://host:3000/ws" ... and returns a ws(s)://host[:port]/ws URL. */
 export function normalizeUrl(raw: string): string {
   let s = raw.trim();
-  if (!s) return DEFAULT_WS_URL;
+  if (!s) return laptopUrl();
   s = s.replace(/^http:\/\//i, "ws://").replace(/^https:\/\//i, "wss://");
   if (!/^wss?:\/\//i.test(s)) s = `ws://${s}`;
   s = s.replace(/\?.*$/, "").replace(/\/+$/, "");

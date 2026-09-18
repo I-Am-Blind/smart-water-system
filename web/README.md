@@ -1,6 +1,7 @@
 # web – server + dashboard
 
-One Node process does everything: serves the Next.js pages, hosts the WebSocket hub on `/ws`,
+One Node process does everything: serves the Next.js pages, reads the Arduino Uno over USB serial
+(`server/serial.ts`), hosts the WebSocket hub on `/ws` for the dashboard and the phone app,
 answers `/api/*`, and keeps 24 h of telemetry in SQLite (`web/data/rig.db`, created on first run).
 It runs unchanged on the laptop at the fair and on Render.
 
@@ -16,13 +17,24 @@ pnpm start          # http://localhost:3000  (LAN URL is printed; also shown as 
 - The first start makes macOS ask whether `node` may accept incoming connections: click **Allow**
   (or System Settings → Network → Firewall → Options). Phones on the same Wi-Fi then open the printed LAN URL.
 - Keep the Mac awake during the demo: `caffeinate -dims pnpm start`.
-- Point the ESP32 at `ws://<laptop-ip>:3000/ws` over its serial console (`server=` command).
+- Plug the Uno in by USB; the server finds it and says `[DEV] device ONLINE`. Close the Arduino IDE Serial
+  Monitor first: only one program can hold the port.
 - `pnpm dev` runs the same process with hot reload for UI work.
+- On Windows, `start.cmd` at the repo root does install + build + start, and starts Expo too.
+
+Environment variables (all optional):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `3000` | HTTP and WebSocket port |
+| `SERIAL_PORT` | `auto` | `auto` finds the Uno by its USB id; or a port such as `COM3` / `/dev/cu.usbmodem1101`; `off` disables serial |
+| `SERIAL_BAUD` | `115200` | must match the sketch |
+| `LAN_IP` | Wi-Fi/Ethernet address | the address shown to phones (QR code, "Open on phone") |
 
 ## Without hardware
 
 ```bash
-pnpm fake            # simulated rig; keys l leak, 1/2 valves, p pump, o offline 15 s, q quit
+pnpm fake            # simulated rig; keys l leak, a auto/manual, 1/2 valves, p pump, o offline 15 s, q quit
 pnpm smoke           # end-to-end check against a running server, prints SMOKE OK
 pnpm test            # golden protocol samples validate
 ```

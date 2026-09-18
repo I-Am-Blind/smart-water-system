@@ -27,8 +27,11 @@ export function SectionCards() {
       </Card>
       <Card>
         <CardHeader>
-          <CardDescription>Pump</CardDescription>
-          <CardTitle className="text-2xl font-semibold">{tel ? (tel.pump ? "Running" : "Off") : "--"}</CardTitle>
+          <CardDescription>Valve control</CardDescription>
+          <CardTitle className="text-2xl font-semibold">{tel ? (tel.auto ? "Automatic" : "Manual") : "--"}</CardTitle>
+          <CardDescription className="text-xs">
+            {tel ? (tel.auto ? "the rig switches branches on a leak" : "leaks are shown, you switch the valves") : ""}
+          </CardDescription>
         </CardHeader>
       </Card>
       <Card>

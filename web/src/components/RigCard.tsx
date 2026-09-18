@@ -4,7 +4,7 @@ import { TwinLegend } from "@/components/twin";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRig } from "@/lib/store";
-import { fmtHm, wsUrlFor } from "@/components/status";
+import { fmtHm } from "@/components/status";
 
 const RigCanvas = dynamic(() => import("@/components/RigCanvas"), {
   ssr: false,
@@ -14,13 +14,12 @@ const RigCanvas = dynamic(() => import("@/components/RigCanvas"), {
 /** First-run instruction over the canvas until a rig has ever reported. */
 function WaitingNote() {
   const hasTel = useRig((s) => s.tel !== null);
-  const serverUrl = useRig((s) => s.serverUrl);
   if (hasTel) return null;
   return (
     <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
       <p className="rounded-md border bg-card px-3 py-2 text-center text-sm">
         Waiting for the rig to connect.
-        <span className="block text-muted-foreground">Point its firmware at <span className="select-all text-foreground">{wsUrlFor(serverUrl)}</span></span>
+        <span className="block text-muted-foreground">Plug the Arduino into this laptop with its USB cable.</span>
       </p>
     </div>
   );

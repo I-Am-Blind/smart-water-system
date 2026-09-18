@@ -13,7 +13,7 @@ A minimal phone companion for the leak-detection rig: live branch flows, leak st
    npx expo start
    ```
 4. Scan the QR code in the terminal with Expo Go (Android) or the Camera app (iOS).
-5. In the app, open **Settings** and enter the server address, e.g. `192.168.0.3:3000` (the app turns it into `ws://192.168.0.3:3000/ws`). The dashboard's QR panel shows the server URL; "Use server address" in Settings fills it in once connected.
+5. The app looks for the rig server on the same laptop it was loaded from, so there is nothing to type. Only if the server runs on another machine, open **Settings** and enter its address, e.g. `192.168.0.3:3000`.
 
 Nothing is installed permanently; Expo Go loads the JavaScript from the laptop each time. If the phone cannot reach the laptop, try `npx expo start --tunnel`.
 
@@ -46,7 +46,7 @@ Because the server is reached over plain `ws://` on the LAN, a standalone Androi
 | File | Purpose |
 |---|---|
 | `app/_layout.tsx` | Tabs (Dashboard, Events, Settings), theme from branding, starts the socket |
-| `app/index.tsx` | Dashboard: status line with All off, four stat tiles (water in, pump, water lost, turbidity/TDS), Branches card with valve switches, pump and Clear leak buttons |
+| `app/index.tsx` | Dashboard: status line with All off, four stat tiles (water in, valve control mode, water lost, turbidity/TDS), Branches card with the automatic-mode switch, valve switches, pump and Clear leak buttons |
 | `app/events.tsx` | Event log, newest first |
 | `app/settings.tsx` | Server URL (persisted), connection state, rig id and IP |
 | `lib/store.ts` | External store, `useRig(selector)`, `sendCmd()` (same shape as the web store) |

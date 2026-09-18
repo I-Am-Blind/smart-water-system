@@ -1,5 +1,7 @@
 # pnpm settings (pnpm 10+ reads them from this file).
 # esbuild's postinstall only checks its prebuilt binary (which arrives via optionalDependencies);
-# approving it here keeps `pnpm install` non-interactive with exit code 0 (matters on Render).
+# serialport's install step likewise only checks for the native binding prebuilt into the package.
+# Approving them here keeps `pnpm install` non-interactive with exit code 0 (matters on Render).
 allowBuilds:
+  '@serialport/bindings-cpp': true
   esbuild: true

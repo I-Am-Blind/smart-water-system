@@ -5,10 +5,11 @@
  *
  *   pnpm fake                      connect to ws://localhost:3000/ws
  *   pnpm fake -- --url ws://host:3000/ws --leak --quiet --hz 1
- *   keys (interactive): l toggle the injected leak, 1/2 toggle a valve, p pump, o go offline 15 s, q quit
+ *   keys (interactive): l toggle the injected leak, a auto/manual, 1/2 toggle a valve, p pump, o go offline 15 s, q quit
  *
  * Two branches, one metered: branch 1 has the IN/OUT pair, branch 2 is a valve only.
- * A confirmed leak closes branch 1 and fails over to branch 2, like the firmware.
+ * Starts in automatic mode: a confirmed leak closes branch 1 and fails over to branch 2, and valve
+ * commands are refused. In manual mode leaks are still reported but nothing switches on its own.
  */
 import { WebSocket } from "ws";
 import {
@@ -36,6 +37,7 @@ const LEAK_CONFIRM_S = 3;
 
 const valves = [true, false];        // branch 2 is the backup: closed until a failover or a command
 let pump = true;
+let autoMode = true;
 let leakInjected = initialLeak;      // only branch 1 can leak: it is the only one with meters
 const leakLevel: LeakLevel[] = [0, 0];
 let leakSecs = 0;
@@ -78,15 +80,31 @@ function setPump(on: boolean, src: RigEvent["src"], reason?: RigEvent["reason"])
   evt({ ev: "pump", on: on ? 1 : 0, src, ...(reason ? { reason } : {}) });
 }
 
-/** Closes the leaking branch and opens the backup one, with the interlock held across the gap. */
+/** Opens exactly one branch (index `open`), with the interlock held across the gap. */
+function switchTo(open: number, src: RigEvent["src"], reason?: RigEvent["reason"]): void {
+  holdInterlock = true;
+  setValve(1 - open, false, src);
+  setValve(open, true, src, reason);
+  holdInterlock = false;
+  pumpInterlock();
+}
+
+/** Automatic mode: branch 1, or the backup while a leak is latched. */
+function applyAuto(src: RigEvent["src"]): void {
+  switchTo(leakLevel[0] >= 2 ? 1 : 0, src);
+}
+
+function setMode(auto: boolean, src: RigEvent["src"]): void {
+  if (autoMode === auto) return;
+  autoMode = auto;
+  evt({ ev: "mode", on: auto ? 1 : 0, src });
+}
+
+/** Latches the leak; in automatic mode also closes the leaking branch and opens the backup one. */
 function failover(kind: "drip" | "burst", loss: number): void {
   leakLevel[0] = kind === "burst" ? 3 : 2;
   evt({ ev: "leak", b: 1, kind, loss: Math.round(loss * 10) / 10, src: "leak" });
-  holdInterlock = true;
-  setValve(0, false, "leak");
-  setValve(1, true, "leak", "failover");
-  holdInterlock = false;
-  pumpInterlock();
+  if (autoMode) switchTo(1, "leak", "failover");
 }
 
 function tick(): Telemetry {
@@ -131,7 +149,7 @@ function tick(): Telemetry {
     p: [...pulses],
     loss: loss.map((v) => Math.round(v * 10) / 10),
     leak: [...leakLevel],
-    v: valves.map((v): OnOff => (v ? 1 : 0)), pump: pump ? 1 : 0,
+    v: valves.map((v): OnOff => (v ? 1 : 0)), pump: pump ? 1 : 0, auto: autoMode ? 1 : 0,
     turb: { mv: Math.round(2900 - ntu * 20), ntu: Math.round(ntu) },
     tds: { mv: Math.round(ppm * 1.35), ppm: Math.round(ppm) },
     rssi: -55 - Math.round(Math.random() * 6),
@@ -149,9 +167,9 @@ function handleCmd(c: DeviceCmd): void {
   log(`cmd ${JSON.stringify(c)}`);
   switch (c.act) {
     case "valve": {
+      if (autoMode) { ack(false, "auto_mode"); return; }
       if (!c.b || c.b < 1 || c.b > valves.length) { ack(false, "bad_branch"); return; }
       const b = c.b - 1;
-      if (c.on && leakLevel[b] >= 2) { ack(false, "latched"); return; }
       setValve(b, Boolean(c.on), "ws");
       ack(true);
       return;
@@ -161,7 +179,13 @@ function handleCmd(c: DeviceCmd): void {
       setPump(Boolean(c.on), "ws");
       ack(true);
       return;
+    case "auto":
+      setMode(Boolean(c.on), "ws");
+      if (autoMode) applyAuto("ws");
+      ack(true);
+      return;
     case "all_off":
+      setMode(false, "ws");
       holdInterlock = true;
       for (let b = 0; b < valves.length; b++) setValve(b, false, "ws");
       holdInterlock = false;
@@ -173,6 +197,7 @@ function handleCmd(c: DeviceCmd): void {
       leakLevel.fill(0);
       leakSecs = 0;
       evt({ ev: "leak_clear", src: "ws" });
+      if (autoMode) applyAuto("ws");
       ack(true);
       return;
     case "ping":
@@ -232,11 +257,12 @@ if (process.stdin.isTTY && !quiet) {
   process.stdin.on("data", (k: string) => {
     if (k === "q" || k === CTRL_C) { console.log(); process.exit(0); }
     if (k === "l") { leakInjected = !leakInjected; log(`injected leak: ${leakInjected ? "ON" : "off"}`); }
+    if (k === "a") { setMode(!autoMode, "serial"); if (autoMode) applyAuto("serial"); }
     if (k === "1" || k === "2") { const b = Number(k) - 1; setValve(b, !valves[b], "serial"); }
     if (k === "p") setPump(!pump, "serial");
     if (k === "o") goOffline(15);
   });
-  log("keys: l toggle leak, 1/2 toggle a valve, p pump, o offline 15 s, q quit");
+  log("keys: l toggle leak, a auto/manual, 1/2 toggle a valve, p pump, o offline 15 s, q quit");
 }
 
 process.on("SIGTERM", () => process.exit(0));

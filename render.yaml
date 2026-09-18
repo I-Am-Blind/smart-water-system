@@ -14,3 +14,6 @@ services:
       - key: NODE_VERSION
         value: 22.22.2
       # Do NOT set NODE_ENV here: it would skip devDependencies during the build.
+      # No USB on a cloud host: the Uno has to be plugged into the machine that runs the server.
+      - key: SERIAL_PORT
+        value: "off"

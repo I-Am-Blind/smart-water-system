@@ -16,7 +16,7 @@ export function onServerMessage(msg: ServerToViewer): void {
     switch (msg.ev) {
       case "leak":
         if (msg.kind === "burst") audio.burst(); else audio.alarm();
-        audio.speak(`Warning. ${msg.kind === "burst" ? "Burst" : "Leak"} detected on ${branchName(msg.b)}. Valve closed.`);
+        audio.speak(`Warning. ${msg.kind === "burst" ? "Burst" : "Leak"} detected on ${branchName(msg.b)}.`);
         break;
       case "leak_clear":
         audio.success();
@@ -32,6 +32,10 @@ export function onServerMessage(msg: ServerToViewer): void {
         break;
       case "all_off":
         audio.warn();
+        break;
+      case "mode":
+        audio.notify();
+        audio.speak(msg.on ? "Automatic mode." : "Manual mode.");
         break;
       default:
         break;

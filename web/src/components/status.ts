@@ -1,11 +1,5 @@
 /** Small shared helpers for copy and formatting on the dashboard. */
 
-/** ws:// form of the server's own URL, for the first-run instruction. */
-export function wsUrlFor(serverUrl: string): string {
-  if (!serverUrl) return "ws://<laptop-ip>:3000/ws";
-  return serverUrl.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
-}
-
 /** "2 s ago", "3 min ago", "1 h ago". */
 export function agoShort(at: number | null, now: number = Date.now()): string {
   if (!at) return "";
@@ -36,6 +30,7 @@ export function describeAckError(err: string, act?: string, branchName?: string)
   const target = act === "valve" && branchName ? branchName : act === "pump" ? "the pump" : "the rig";
   switch (err) {
     case "latched": return `Couldn't open ${branchName ?? "the valve"}: the leak is still latched. Clear the leak first.`;
+    case "auto_mode": return "The rig is in Automatic mode. Switch to Manual to control the valves.";
     case "no_open_valve": return "Couldn't start the pump: open at least one valve first.";
     case "bad_branch": return "That branch doesn't exist on the rig.";
     case "unknown_act":

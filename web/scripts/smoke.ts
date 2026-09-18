@@ -73,6 +73,19 @@ async function main(): Promise<void> {
   const sendCmd = (c: Omit<ViewerCmd, "t">): void => { ws.send(JSON.stringify({ t: "cmd", ...c } satisfies ViewerCmd)); };
   const ackFor = (cid: string): Promise<Msg<"ack">> => expect((m): m is Msg<"ack"> => m.t === "ack" && m.cid === cid, 3000, `ack ${cid}`);
 
+  // The rig boots in automatic mode, where valve commands are refused: check that, then go manual.
+  step = "valve refused in auto mode";
+  sendCmd({ cid: "s0", act: "valve", b: 2, on: true });
+  const ack0 = await ackFor("s0");
+  if (ack0.ok || ack0.err !== "auto_mode") fail(`valve in auto mode: expected auto_mode, got ${JSON.stringify(ack0)}`);
+  step = "switch to manual";
+  sendCmd({ cid: "s0m", act: "auto", on: false });
+  const ackM = await ackFor("s0m");
+  if (!ackM.ok) fail(`manual mode not acked: ${ackM.err}`);
+  await expect((m): m is Msg<"evt"> => m.t === "evt" && m.ev === "mode" && m.on === 0, 3000, "evt mode manual");
+  await expect((m): m is Stamped<Telemetry> => m.t === "tel" && m.auto === 0, 3000, "tel with auto=0");
+  console.log("  valve refused in auto mode, switched to manual");
+
   // Branch 2 is the backup: it starts closed, so opening then closing it exercises both directions.
   step = "valve open ack";
   sendCmd({ cid: "s1", act: "valve", b: 2, on: true });
